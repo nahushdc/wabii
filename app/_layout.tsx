@@ -1,46 +1,50 @@
 import { useEffect, useState } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack, router } from 'expo-router';
+import { Slot, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import '../global.css';
 
+import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+function AuthGuard({ session }: { session: Session | null | undefined }) {
+  const segments = useSegments();
+  const router = useRouter();
+  const navigationState = useRootNavigationState();
+
+  useEffect(() => {
+    if (!navigationState?.key || session === undefined) return;
+
+    const inTabs = segments[0] === '(tabs)';
+
+    if (!session && inTabs) {
+      router.replace('/log-in');
+    } else if (session && !inTabs) {
+      router.replace('/(tabs)');
+    }
+  }, [session, segments, navigationState?.key]);
+
+  return null;
+}
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  const [ready, setReady] = useState(false);
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace('/(tabs)');
-      else router.replace('/log-in');
-      setReady(true);
-    });
-
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) router.replace('/(tabs)');
-      else router.replace('/log-in');
+      setSession(session);
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
-  if (!ready) return null;
-
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="log-in" options={{ headerShown: false }} />
-        <Stack.Screen name="sign-up" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
+      <AuthGuard session={session} />
+      <Slot />
       <StatusBar style="auto" />
     </ThemeProvider>
   );
