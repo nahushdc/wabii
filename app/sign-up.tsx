@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Link, router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import * as AuthSession from 'expo-auth-session';
 import { supabase } from '@/lib/supabase';
+import { signInWithGoogle } from '@/lib/auth';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -28,23 +28,9 @@ export default function SignUpScreen() {
   async function handleGoogle() {
     setError('');
     setGoogleLoading(true);
-    const redirectTo = AuthSession.makeRedirectUri({ scheme: 'wabii' });
-    const { data, error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo, skipBrowserRedirect: true },
-    });
-    if (err || !data.url) { setError(err?.message ?? 'Google sign in failed.'); setGoogleLoading(false); return; }
-    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-    if (result.type === 'success' && result.url) {
-      const url = new URL(result.url);
-      const accessToken = url.searchParams.get('access_token');
-      const refreshToken = url.searchParams.get('refresh_token');
-      if (accessToken && refreshToken) {
-        await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-        router.replace('/(tabs)');
-      }
-    }
+    const { error: err } = await signInWithGoogle();
     setGoogleLoading(false);
+    if (err) setError(err);
   }
 
   return (
@@ -90,7 +76,7 @@ export default function SignUpScreen() {
         </Pressable>
 
         <Pressable
-          className="border border-gray-200 rounded-xl py-4 items-center flex-row justify-center gap-2 mb-6"
+          className="border border-gray-200 rounded-xl py-4 items-center mb-6"
           onPress={handleGoogle}
           disabled={googleLoading}>
           {googleLoading
