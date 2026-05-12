@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { PasswordInput } from '@/components/password-input';
 
 export default function ResetPasswordScreen() {
   const [password, setPassword] = useState('');
@@ -34,23 +35,21 @@ export default function ResetPasswordScreen() {
         ) : null}
 
         <Text className="text-sm font-medium text-gray-700 mb-1">New password</Text>
-        <TextInput
-          className="border border-gray-200 rounded-xl px-4 py-3 text-base text-gray-900 mb-4"
+        <PasswordInput
+          className="mb-4"
           placeholder="At least 6 characters"
           placeholderTextColor="#9ca3af"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
         />
 
         <Text className="text-sm font-medium text-gray-700 mb-1">Confirm password</Text>
-        <TextInput
-          className="border border-gray-200 rounded-xl px-4 py-3 text-base text-gray-900 mb-6"
+        <PasswordInput
+          className="mb-6"
           placeholder="Same password again"
           placeholderTextColor="#9ca3af"
           value={confirm}
           onChangeText={setConfirm}
-          secureTextEntry
         />
 
         <Pressable

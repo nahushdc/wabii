@@ -4,6 +4,7 @@ import { Link, router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
 import { signInWithGoogle } from '@/lib/auth';
+import { PasswordInput } from '@/components/password-input';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -56,13 +57,12 @@ export default function LogInScreen() {
         />
 
         <Text className="text-sm font-medium text-gray-700 mb-1">Password</Text>
-        <TextInput
-          className="border border-gray-200 rounded-xl px-4 py-3 text-base text-gray-900 mb-6"
+        <PasswordInput
+          className="mb-6"
           placeholder="Your password"
           placeholderTextColor="#9ca3af"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
         />
 
         <Pressable
