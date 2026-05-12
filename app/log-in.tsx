@@ -75,13 +75,19 @@ export default function LogInScreen() {
         </Pressable>
 
         <Pressable
-          className="border border-gray-200 rounded-xl py-4 items-center mb-6"
+          className="border border-gray-200 rounded-xl py-4 items-center mb-4"
           onPress={handleGoogle}
           disabled={googleLoading}>
           {googleLoading
             ? <ActivityIndicator color="#4f46e5" />
             : <Text className="text-gray-700 font-medium text-base">Continue with Google</Text>}
         </Pressable>
+
+        <Link href="/forgot-password" asChild>
+          <Pressable className="items-center py-2 mb-4">
+            <Text className="text-indigo-600 font-medium">Forgot password?</Text>
+          </Pressable>
+        </Link>
 
         <Link href="/sign-up" asChild>
           <Pressable className="items-center py-2">
