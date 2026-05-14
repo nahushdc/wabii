@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, TextInput, Modal } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { TagCategory, PRESET_TAGS, CATEGORY_LABELS, CATEGORY_COLORS } from '@/lib/preset-tags';
+import { TagCategory, PRESET_TAGS, CATEGORY_LABELS, ACTIVE_COLOR, INACTIVE_COLOR } from '@/lib/preset-tags';
 
 export type SelectedTag = {
   name: string;
@@ -41,25 +41,20 @@ export function TagPicker({ selected, onChange }: Props) {
     setCustomInput('');
   }
 
-  const activeColors = CATEGORY_COLORS[activeCategory];
-
   return (
     <>
-      {/* Tag chips shown below the writing area */}
+      {/* Selected tag chips */}
       <View className="flex-row flex-wrap gap-2 px-6 pb-2 items-center">
-        {selected.map(tag => {
-          const c = CATEGORY_COLORS[tag.category];
-          return (
-            <Pressable
-              key={`${tag.category}-${tag.name}`}
-              className="flex-row items-center gap-1 px-3 py-1 rounded-full"
-              style={{ backgroundColor: c.activeBg }}
-              onPress={() => toggle(tag.name, tag.category)}>
-              <Text className="text-xs font-medium" style={{ color: c.activeText }}>{tag.name}</Text>
-              <Feather name="x" size={11} color={c.activeText} />
-            </Pressable>
-          );
-        })}
+        {selected.map(tag => (
+          <Pressable
+            key={`${tag.category}-${tag.name}`}
+            className="flex-row items-center gap-1 px-3 py-1 rounded-full"
+            style={{ backgroundColor: ACTIVE_COLOR.bg }}
+            onPress={() => toggle(tag.name, tag.category)}>
+            <Text className="text-xs font-medium" style={{ color: ACTIVE_COLOR.text }}>{tag.name}</Text>
+            <Feather name="x" size={11} color={ACTIVE_COLOR.text} />
+          </Pressable>
+        ))}
         <Pressable
           className="flex-row items-center gap-1 px-3 py-1 rounded-full border border-gray-200"
           onPress={() => setOpen(true)}>
@@ -68,10 +63,9 @@ export function TagPicker({ selected, onChange }: Props) {
         </Pressable>
       </View>
 
-      {/* Tag picker modal */}
       <Modal visible={open} animationType="slide" presentationStyle="pageSheet">
         <View className="flex-1 bg-white">
-          {/* Modal header */}
+          {/* Header */}
           <View className="flex-row items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
             <Text className="text-lg font-semibold text-gray-900">Add tags</Text>
             <Pressable onPress={() => setOpen(false)} className="p-1">
@@ -83,17 +77,16 @@ export function TagPicker({ selected, onChange }: Props) {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="border-b border-gray-100">
             <View className="flex-row px-4 py-3 gap-2">
               {CATEGORIES.map(cat => {
-                const c = CATEGORY_COLORS[cat];
                 const isActive = activeCategory === cat;
                 return (
                   <Pressable
                     key={cat}
                     className="px-4 py-2 rounded-full"
-                    style={{ backgroundColor: isActive ? c.activeBg : c.bg }}
+                    style={{ backgroundColor: isActive ? ACTIVE_COLOR.bg : INACTIVE_COLOR.bg }}
                     onPress={() => setActiveCategory(cat)}>
                     <Text
                       className="text-sm font-medium"
-                      style={{ color: isActive ? c.activeText : c.text }}>
+                      style={{ color: isActive ? ACTIVE_COLOR.text : INACTIVE_COLOR.text }}>
                       {CATEGORY_LABELS[cat]}
                     </Text>
                   </Pressable>
@@ -115,43 +108,30 @@ export function TagPicker({ selected, onChange }: Props) {
                   onSubmitEditing={addCustom}
                   returnKeyType="done"
                 />
-                <Pressable
-                  className="bg-indigo-600 rounded-xl px-4 justify-center"
-                  onPress={addCustom}>
+                <Pressable className="bg-indigo-600 rounded-xl px-4 justify-center" onPress={addCustom}>
                   <Feather name="plus" size={20} color="white" />
                 </Pressable>
               </View>
             )}
 
-            {/* Preset tags */}
+            {/* Tags grid */}
             <View className="flex-row flex-wrap gap-2 pb-8">
-              {PRESET_TAGS[activeCategory].map(name => {
+              {[...PRESET_TAGS[activeCategory], ...(activeCategory === 'custom' ? selected.filter(t => t.category === 'custom').map(t => t.name) : [])].map(name => {
                 const active = isSelected(name, activeCategory);
                 return (
                   <Pressable
                     key={name}
                     className="px-4 py-2 rounded-full"
-                    style={{ backgroundColor: active ? activeColors.activeBg : activeColors.bg }}
+                    style={{ backgroundColor: active ? ACTIVE_COLOR.bg : INACTIVE_COLOR.bg }}
                     onPress={() => toggle(name, activeCategory)}>
                     <Text
                       className="text-sm font-medium"
-                      style={{ color: active ? activeColors.activeText : activeColors.text }}>
+                      style={{ color: active ? ACTIVE_COLOR.text : INACTIVE_COLOR.text }}>
                       {name}
                     </Text>
                   </Pressable>
                 );
               })}
-              {activeCategory === 'custom' && selected.filter(t => t.category === 'custom').map(tag => (
-                <Pressable
-                  key={tag.name}
-                  className="px-4 py-2 rounded-full"
-                  style={{ backgroundColor: activeColors.activeBg }}
-                  onPress={() => toggle(tag.name, 'custom')}>
-                  <Text className="text-sm font-medium" style={{ color: activeColors.activeText }}>
-                    {tag.name}
-                  </Text>
-                </Pressable>
-              ))}
             </View>
           </ScrollView>
         </View>

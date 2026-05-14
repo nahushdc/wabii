@@ -23,9 +23,5 @@ export const CATEGORY_LABELS: Record<TagCategory, string> = {
   custom: 'Custom',
 };
 
-export const CATEGORY_COLORS: Record<TagCategory, { bg: string; text: string; activeBg: string; activeText: string }> = {
-  life_area: { bg: '#eff6ff', text: '#2563eb', activeBg: '#2563eb', activeText: '#ffffff' },
-  emotion:   { bg: '#faf5ff', text: '#9333ea', activeBg: '#9333ea', activeText: '#ffffff' },
-  fear:      { bg: '#fff7ed', text: '#ea580c', activeBg: '#ea580c', activeText: '#ffffff' },
-  custom:    { bg: '#f3f4f6', text: '#4b5563', activeBg: '#374151', activeText: '#ffffff' },
-};
+export const ACTIVE_COLOR = { bg: '#4f46e5', text: '#ffffff' };
+export const INACTIVE_COLOR = { bg: '#f3f4f6', text: '#374151' };
