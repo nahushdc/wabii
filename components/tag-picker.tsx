@@ -41,7 +41,7 @@ export function TagPicker({ selected, onChange }: Props) {
     setCustomInput('');
   }
 
-  const colors = CATEGORY_COLORS[activeCategory];
+  const activeColors = CATEGORY_COLORS[activeCategory];
 
   return (
     <>
@@ -52,10 +52,11 @@ export function TagPicker({ selected, onChange }: Props) {
           return (
             <Pressable
               key={`${tag.category}-${tag.name}`}
-              className={`flex-row items-center gap-1 px-3 py-1 rounded-full ${c.activeBg}`}
+              className="flex-row items-center gap-1 px-3 py-1 rounded-full"
+              style={{ backgroundColor: c.activeBg }}
               onPress={() => toggle(tag.name, tag.category)}>
-              <Text className={`text-xs font-medium ${c.activeText}`}>{tag.name}</Text>
-              <Feather name="x" size={11} color="white" />
+              <Text className="text-xs font-medium" style={{ color: c.activeText }}>{tag.name}</Text>
+              <Feather name="x" size={11} color={c.activeText} />
             </Pressable>
           );
         })}
@@ -81,16 +82,23 @@ export function TagPicker({ selected, onChange }: Props) {
           {/* Category tabs */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="border-b border-gray-100">
             <View className="flex-row px-4 py-3 gap-2">
-              {CATEGORIES.map(cat => (
-                <Pressable
-                  key={cat}
-                  className={`px-4 py-2 rounded-full ${activeCategory === cat ? CATEGORY_COLORS[cat].activeBg : CATEGORY_COLORS[cat].bg}`}
-                  onPress={() => setActiveCategory(cat)}>
-                  <Text className={`text-sm font-medium ${activeCategory === cat ? CATEGORY_COLORS[cat].activeText : CATEGORY_COLORS[cat].text}`}>
-                    {CATEGORY_LABELS[cat]}
-                  </Text>
-                </Pressable>
-              ))}
+              {CATEGORIES.map(cat => {
+                const c = CATEGORY_COLORS[cat];
+                const isActive = activeCategory === cat;
+                return (
+                  <Pressable
+                    key={cat}
+                    className="px-4 py-2 rounded-full"
+                    style={{ backgroundColor: isActive ? c.activeBg : c.bg }}
+                    onPress={() => setActiveCategory(cat)}>
+                    <Text
+                      className="text-sm font-medium"
+                      style={{ color: isActive ? c.activeText : c.text }}>
+                      {CATEGORY_LABELS[cat]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           </ScrollView>
 
@@ -122,9 +130,12 @@ export function TagPicker({ selected, onChange }: Props) {
                 return (
                   <Pressable
                     key={name}
-                    className={`px-4 py-2 rounded-full border ${active ? `${colors.activeBg} border-transparent` : `${colors.bg} border-transparent`}`}
+                    className="px-4 py-2 rounded-full"
+                    style={{ backgroundColor: active ? activeColors.activeBg : activeColors.bg }}
                     onPress={() => toggle(name, activeCategory)}>
-                    <Text className={`text-sm font-medium ${active ? colors.activeText : colors.text}`}>
+                    <Text
+                      className="text-sm font-medium"
+                      style={{ color: active ? activeColors.activeText : activeColors.text }}>
                       {name}
                     </Text>
                   </Pressable>
@@ -133,9 +144,12 @@ export function TagPicker({ selected, onChange }: Props) {
               {activeCategory === 'custom' && selected.filter(t => t.category === 'custom').map(tag => (
                 <Pressable
                   key={tag.name}
-                  className={`px-4 py-2 rounded-full ${colors.activeBg}`}
+                  className="px-4 py-2 rounded-full"
+                  style={{ backgroundColor: activeColors.activeBg }}
                   onPress={() => toggle(tag.name, 'custom')}>
-                  <Text className={`text-sm font-medium ${colors.activeText}`}>{tag.name}</Text>
+                  <Text className="text-sm font-medium" style={{ color: activeColors.activeText }}>
+                    {tag.name}
+                  </Text>
                 </Pressable>
               ))}
             </View>

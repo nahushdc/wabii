@@ -24,8 +24,8 @@ export const CATEGORY_LABELS: Record<TagCategory, string> = {
 };
 
 export const CATEGORY_COLORS: Record<TagCategory, { bg: string; text: string; activeBg: string; activeText: string }> = {
-  life_area: { bg: 'bg-blue-50', text: 'text-blue-600', activeBg: 'bg-blue-600', activeText: 'text-white' },
-  emotion:   { bg: 'bg-purple-50', text: 'text-purple-600', activeBg: 'bg-purple-600', activeText: 'text-white' },
-  fear:      { bg: 'bg-orange-50', text: 'text-orange-600', activeBg: 'bg-orange-600', activeText: 'text-white' },
-  custom:    { bg: 'bg-gray-100', text: 'text-gray-600', activeBg: 'bg-gray-700', activeText: 'text-white' },
+  life_area: { bg: '#eff6ff', text: '#2563eb', activeBg: '#2563eb', activeText: '#ffffff' },
+  emotion:   { bg: '#faf5ff', text: '#9333ea', activeBg: '#9333ea', activeText: '#ffffff' },
+  fear:      { bg: '#fff7ed', text: '#ea580c', activeBg: '#ea580c', activeText: '#ffffff' },
+  custom:    { bg: '#f3f4f6', text: '#4b5563', activeBg: '#374151', activeText: '#ffffff' },
 };
