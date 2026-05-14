@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { TagPicker, SelectedTag } from '@/components/tag-picker';
 
 export default function NewEntryScreen() {
   const [content, setContent] = useState('');
+  const [tags, setTags] = useState<SelectedTag[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -14,16 +16,39 @@ export default function NewEntryScreen() {
     setError('');
     if (!content.trim()) { setError('Write something before saving.'); return; }
     setLoading(true);
+
     const { data: { user } } = await supabase.auth.getUser();
-    const { error: err } = await supabase
+
+    // Save entry
+    const { data: entry, error: entryErr } = await supabase
       .from('journal_entries')
-      .insert({ user_id: user!.id, content: content.trim() });
-    setLoading(false);
-    if (err) setError(err.message);
-    else {
-      setContent('');
-      router.replace('/(tabs)');
+      .insert({ user_id: user!.id, content: content.trim() })
+      .select('id')
+      .single();
+
+    if (entryErr || !entry) { setError(entryErr?.message ?? 'Failed to save.'); setLoading(false); return; }
+
+    // Save tags and entry_tags
+    if (tags.length > 0) {
+      for (const tag of tags) {
+        // Upsert tag (create if not exists, reuse if exists)
+        const { data: tagRow, error: tagErr } = await supabase
+          .from('tags')
+          .upsert({ user_id: user!.id, name: tag.name, category: tag.category }, { onConflict: 'user_id,name' })
+          .select('id')
+          .single();
+
+        if (tagErr || !tagRow) continue;
+
+        // Link tag to entry
+        await supabase.from('entry_tags').insert({ entry_id: entry.id, tag_id: tagRow.id });
+      }
     }
+
+    setLoading(false);
+    setContent('');
+    setTags([]);
+    router.replace('/(tabs)');
   }
 
   return (
@@ -56,7 +81,7 @@ export default function NewEntryScreen() {
 
         {/* Writing area */}
         <TextInput
-          className="flex-1 px-6 py-5 text-base text-gray-900 leading-relaxed"
+          className="px-6 py-5 text-base text-gray-900 leading-relaxed"
           placeholder="What's on your mind?"
           placeholderTextColor="#9ca3af"
           value={content}
@@ -64,11 +89,14 @@ export default function NewEntryScreen() {
           multiline
           autoFocus
           textAlignVertical="top"
-          style={{ minHeight: 400 }}
+          style={{ minHeight: 380 }}
         />
 
+        {/* Tags */}
+        <TagPicker selected={tags} onChange={setTags} />
+
         {/* Word count */}
-        <View className="px-6 pb-8">
+        <View className="px-6 pb-8 pt-2">
           <Text className="text-xs text-gray-400">{wordCount} {wordCount === 1 ? 'word' : 'words'}</Text>
         </View>
 
