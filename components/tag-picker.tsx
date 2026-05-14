@@ -46,7 +46,7 @@ export function TagPicker({ selected, onChange }: Props) {
   return (
     <>
       {/* Tag chips shown below the writing area */}
-      <View className="flex-row flex-wrap gap-2 px-6 pb-2">
+      <View className="flex-row flex-wrap gap-2 px-6 pb-2 items-center">
         {selected.map(tag => {
           const c = CATEGORY_COLORS[tag.category];
           return (
