@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const PUBLIC_ROUTES = ['log-in', 'sign-up', 'forgot-password', 'reset-password'];
-const PRIVATE_ROUTES = ['profile', 'entry'];
+const PRIVATE_ROUTES = ['profile', 'entry', 'digest'];
 
 function AuthGuard({ session }: { session: Session | null | undefined }) {
   const segments = useSegments();

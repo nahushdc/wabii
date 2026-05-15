@@ -4,6 +4,12 @@ import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 
+type Digest = {
+  id: string;
+  content: string;
+  week_start: string;
+};
+
 type Entry = {
   id: string;
   content: string;
@@ -43,10 +49,51 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
+function formatWeek(dateStr: string) {
+  const date = new Date(dateStr);
+  const end = new Date(date);
+  end.setDate(date.getDate() + 6);
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(date)} – ${fmt(end)}`;
+}
+
+function DigestCard({ digest }: { digest: Digest }) {
+  return (
+    <Pressable
+      onPress={() => router.push(`/digest/${digest.id}`)}
+      style={{
+        backgroundColor: '#fdf6ee',
+        borderRadius: 20,
+        padding: 20,
+        marginBottom: 8,
+        marginTop: 4,
+        borderWidth: 1,
+        borderColor: '#f0e6d3',
+        shadowColor: '#c4a882',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+        elevation: 3,
+      }}>
+      <View className="flex-row items-center gap-2 mb-3">
+        <Text style={{ fontSize: 18 }}>🌿</Text>
+        <Text className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#b07d4a' }}>Your Weekly Journey</Text>
+      </View>
+      <Text className="text-base font-semibold mb-2" style={{ color: '#1c1917' }}>{formatWeek(digest.week_start)}</Text>
+      <Text className="text-sm leading-relaxed" style={{ color: '#78716c' }} numberOfLines={3}>{digest.content}</Text>
+      <View className="flex-row items-center justify-end mt-3 gap-1">
+        <Text className="text-xs" style={{ color: '#b07d4a' }}>Read reflection</Text>
+        <Feather name="arrow-right" size={12} color="#b07d4a" />
+      </View>
+    </Pressable>
+  );
+}
+
 export default function HomeScreen() {
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [latestDigest, setLatestDigest] = useState<Digest | null>(null);
 
   async function fetchEntries() {
     const { data, error } = await supabase
@@ -56,10 +103,20 @@ export default function HomeScreen() {
     if (!error && data) setSections(groupByDate(data));
   }
 
+  async function fetchLatestDigest() {
+    const { data } = await supabase
+      .from('weekly_digests')
+      .select('id, content, week_start')
+      .order('week_start', { ascending: false })
+      .limit(1)
+      .single();
+    if (data) setLatestDigest(data);
+  }
+
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      fetchEntries().finally(() => setLoading(false));
+      Promise.all([fetchEntries(), fetchLatestDigest()]).finally(() => setLoading(false));
     }, [])
   );
 
@@ -84,6 +141,12 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
+      {latestDigest && (
+        <View className="px-4">
+          <DigestCard digest={latestDigest} />
+        </View>
+      )}
+
       {sections.length === 0 ? (
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-5xl mb-4">✍️</Text>
@@ -95,7 +158,7 @@ export default function HomeScreen() {
           sections={sections}
           keyExtractor={item => item.id}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchEntries(); setRefreshing(false); }} tintColor="#4f46e5" />
+            <RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await Promise.all([fetchEntries(), fetchLatestDigest()]); setRefreshing(false); }} tintColor="#4f46e5" />
           }
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
           stickySectionHeadersEnabled={false}
