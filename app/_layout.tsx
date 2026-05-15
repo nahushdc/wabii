@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const PUBLIC_ROUTES = ['log-in', 'sign-up', 'forgot-password', 'reset-password'];
+const PRIVATE_ROUTES = ['profile', 'entry'];
 
 function AuthGuard({ session }: { session: Session | null | undefined }) {
   const segments = useSegments();
@@ -22,6 +23,7 @@ function AuthGuard({ session }: { session: Session | null | undefined }) {
     const currentRoute = segments[0] as string;
     const inTabs = currentRoute === '(tabs)';
     const inPublicRoute = PUBLIC_ROUTES.includes(currentRoute);
+    const inPrivateRoute = PRIVATE_ROUTES.some(r => currentRoute?.startsWith(r));
 
     if (!session && !inPublicRoute) {
       router.replace('/log-in');

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { View, Text, SectionList, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 
 type Entry = {
@@ -19,7 +20,6 @@ function getDayLabel(iso: string) {
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(today.getDate() - 1);
-
   if (date.toDateString() === today.toDateString()) return 'Today';
   if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
   return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -36,7 +36,11 @@ function groupByDate(entries: Entry[]): Section[] {
 }
 
 function preview(content: string) {
-  return content.length > 120 ? content.slice(0, 120).trimEnd() + '…' : content;
+  return content.length > 160 ? content.slice(0, 160).trimEnd() + '…' : content;
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
 export default function HomeScreen() {
@@ -59,46 +63,72 @@ export default function HomeScreen() {
     }, [])
   );
 
-  async function handleRefresh() {
-    setRefreshing(true);
-    await fetchEntries();
-    setRefreshing(false);
-  }
-
   if (loading) {
-    return <View className="flex-1 items-center justify-center bg-white"><ActivityIndicator color="#4f46e5" /></View>;
+    return (
+      <View className="flex-1 items-center justify-center" style={{ backgroundColor: '#fafaf8' }}>
+        <ActivityIndicator color="#4f46e5" />
+      </View>
+    );
   }
 
   return (
-    <View className="flex-1 bg-white">
-      <View className="px-6 pt-16 pb-4 border-b border-gray-100">
-        <Text className="text-2xl font-bold text-gray-900">Journal</Text>
+    <View className="flex-1" style={{ backgroundColor: '#fafaf8' }}>
+      {/* Header */}
+      <View className="flex-row items-center justify-between px-6 pt-16 pb-4">
+        <Text className="text-3xl font-bold" style={{ color: '#1c1917' }}>Journal</Text>
+        <Pressable
+          className="w-10 h-10 rounded-full items-center justify-center"
+          style={{ backgroundColor: '#f0ede8' }}
+          onPress={() => router.push('/profile')}>
+          <Feather name="user" size={20} color="#78716c" />
+        </Pressable>
       </View>
 
       {sections.length === 0 ? (
         <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-4xl mb-4">✍️</Text>
-          <Text className="text-lg font-semibold text-gray-700 mb-2">Nothing here yet</Text>
-          <Text className="text-gray-400 text-center">Tap New Entry to write your first journal entry.</Text>
+          <Text className="text-5xl mb-4">✍️</Text>
+          <Text className="text-xl font-semibold mb-2" style={{ color: '#1c1917' }}>Nothing here yet</Text>
+          <Text className="text-center" style={{ color: '#a8a29e' }}>Tap New Entry to write your first journal entry.</Text>
         </View>
       ) : (
         <SectionList
           sections={sections}
           keyExtractor={item => item.id}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#4f46e5" />}
-          contentContainerStyle={{ paddingBottom: 32 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchEntries(); setRefreshing(false); }} tintColor="#4f46e5" />
+          }
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+          stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }) => (
-            <View className="px-6 py-2 bg-gray-50 border-b border-gray-100">
-              <Text className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{section.title}</Text>
+            <View className="pt-6 pb-2 px-2">
+              <Text className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#a8a29e' }}>
+                {section.title}
+              </Text>
             </View>
           )}
-          renderItem={({ item }) => (
-            <Pressable
-              className="px-6 py-4 border-b border-gray-50 active:bg-gray-50"
-              onPress={() => router.push(`/entry/${item.id}`)}>
-              <Text className="text-gray-800 text-base leading-relaxed">{preview(item.content)}</Text>
-            </Pressable>
-          )}
+          renderItem={({ item, index, section }) => {
+            const isLast = index === section.data.length - 1;
+            return (
+              <Pressable
+                onPress={() => router.push(`/entry/${item.id}`)}
+                style={({ pressed }) => ({
+                  backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
+                  borderRadius: 16,
+                  padding: 16,
+                  marginBottom: isLast ? 0 : 8,
+                  shadowColor: '#1c1917',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.06,
+                  shadowRadius: 4,
+                  elevation: 2,
+                })}>
+                <Text style={{ fontSize: 17, lineHeight: 26, color: '#292524' }}>
+                  {preview(item.content)}
+                </Text>
+                <Text className="mt-2 text-xs" style={{ color: '#c4b9b0' }}>{formatTime(item.created_at)}</Text>
+              </Pressable>
+            );
+          }}
         />
       )}
     </View>
