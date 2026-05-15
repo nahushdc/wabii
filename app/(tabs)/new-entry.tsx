@@ -45,6 +45,11 @@ export default function NewEntryScreen() {
       }
     }
 
+    // Generate embedding in background (don't block save)
+    supabase.functions.invoke('embed-entry', {
+      body: { entry_id: entry.id, content: content.trim() },
+    });
+
     setLoading(false);
     setContent('');
     setTags([]);
