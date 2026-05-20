@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Link, router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
@@ -35,61 +35,84 @@ export default function SignUpScreen() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View className="flex-1 justify-center px-8">
-        <Text className="text-3xl font-bold text-indigo-600 mb-2">Wabii</Text>
-        <Text className="text-gray-500 mb-10">Create your account</Text>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#faf9f7' }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 48 }} keyboardShouldPersistTaps="handled">
+
+        {/* Brand */}
+        <View style={{ marginBottom: 40 }}>
+          <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 40, color: '#1c1917', marginBottom: 8 }}>
+            Wabii
+          </Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: '#a8a29e' }}>
+            Start your reflection journey ✨
+          </Text>
+        </View>
 
         {error ? (
-          <View className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
-            <Text className="text-red-600 text-sm">{error}</Text>
+          <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#ef4444' }}>{error}</Text>
           </View>
         ) : null}
 
-        <Text className="text-sm font-medium text-gray-700 mb-1">Email</Text>
+        {/* Email */}
+        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#78716c', marginBottom: 6 }}>Email</Text>
         <TextInput
-          className="border border-gray-200 rounded-xl px-4 py-3 text-base text-gray-900 mb-4"
+          style={{
+            backgroundColor: '#ffffff', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+            fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', marginBottom: 14,
+            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+          }}
           placeholder="you@example.com"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor="#c4b9b0"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
         />
 
-        <Text className="text-sm font-medium text-gray-700 mb-1">Password</Text>
+        {/* Password */}
+        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#78716c', marginBottom: 6 }}>Password</Text>
         <PasswordInput
-          className="mb-6"
-          placeholder="At least 6 characters"
-          placeholderTextColor="#9ca3af"
           value={password}
           onChangeText={setPassword}
+          placeholder="At least 6 characters"
+          placeholderTextColor="#c4b9b0"
+          style={{ marginBottom: 28 }}
         />
 
+        {/* Sign up button */}
         <Pressable
-          className="bg-indigo-600 rounded-xl py-4 items-center mb-3"
           onPress={handleSignUp}
-          disabled={loading}>
+          disabled={loading}
+          style={{ backgroundColor: '#4f46e5', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12 }}>
           {loading
             ? <ActivityIndicator color="white" />
-            : <Text className="text-white font-semibold text-base">Create account</Text>}
+            : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Create account</Text>}
         </Pressable>
 
+        {/* Google */}
         <Pressable
-          className="border border-gray-200 rounded-xl py-4 items-center mb-6"
           onPress={handleGoogle}
-          disabled={googleLoading}>
+          disabled={googleLoading}
+          style={{
+            backgroundColor: '#ffffff', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 32,
+            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+          }}>
           {googleLoading
             ? <ActivityIndicator color="#4f46e5" />
-            : <Text className="text-gray-700 font-medium text-base">Continue with Google</Text>}
+            : <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 16, color: '#1c1917' }}>Continue with Google</Text>}
         </Pressable>
 
         <Link href="/log-in" asChild>
-          <Pressable className="items-center py-2">
-            <Text className="text-gray-500">Already have an account? <Text className="text-indigo-600 font-medium">Log in</Text></Text>
+          <Pressable style={{ alignItems: 'center' }}>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#a8a29e' }}>
+              Already have an account?{' '}
+              <Text style={{ fontFamily: 'Inter_600SemiBold', color: '#4f46e5' }}>Log in</Text>
+            </Text>
           </Pressable>
         </Link>
-      </View>
+
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }

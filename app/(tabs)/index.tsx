@@ -16,10 +16,22 @@ type Entry = {
   created_at: string;
 };
 
+type EntryItem = Entry & { _type: 'entry' };
+type DigestItem = Digest & { _type: 'digest' };
+type SectionItem = EntryItem | DigestItem;
+
 type Section = {
   title: string;
-  data: Entry[];
+  data: SectionItem[];
 };
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return { text: 'Good morning', emoji: '☀️' };
+  if (hour < 17) return { text: 'Good afternoon', emoji: '🌤️' };
+  if (hour < 21) return { text: 'Good evening', emoji: '🌇' };
+  return { text: 'Good night', emoji: '🌙' };
+}
 
 function getDayLabel(iso: string) {
   const date = new Date(iso);
@@ -31,24 +43,6 @@ function getDayLabel(iso: string) {
   return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-function groupByDate(entries: Entry[]): Section[] {
-  const groups: Record<string, Entry[]> = {};
-  for (const entry of entries) {
-    const label = getDayLabel(entry.created_at);
-    if (!groups[label]) groups[label] = [];
-    groups[label].push(entry);
-  }
-  return Object.entries(groups).map(([title, data]) => ({ title, data }));
-}
-
-function preview(content: string) {
-  return content.length > 160 ? content.slice(0, 160).trimEnd() + '…' : content;
-}
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-}
-
 function formatWeek(dateStr: string) {
   const date = new Date(dateStr);
   const end = new Date(date);
@@ -57,138 +51,196 @@ function formatWeek(dateStr: string) {
   return `${fmt(date)} – ${fmt(end)}`;
 }
 
-function DigestCard({ digest }: { digest: Digest }) {
-  return (
-    <Pressable
-      onPress={() => router.push(`/digest/${digest.id}`)}
-      style={{
-        backgroundColor: '#fdf6ee',
-        borderRadius: 20,
-        padding: 20,
-        marginBottom: 8,
-        marginTop: 4,
-        borderWidth: 1,
-        borderColor: '#f0e6d3',
-        shadowColor: '#c4a882',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
-        elevation: 3,
-      }}>
-      <View className="flex-row items-center gap-2 mb-3">
-        <Text style={{ fontSize: 18 }}>🌿</Text>
-        <Text className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#b07d4a' }}>Your Weekly Journey</Text>
-      </View>
-      <Text className="text-base font-semibold mb-2" style={{ color: '#1c1917' }}>{formatWeek(digest.week_start)}</Text>
-      <Text className="text-sm leading-relaxed" style={{ color: '#78716c' }} numberOfLines={3}>{digest.content}</Text>
-      <View className="flex-row items-center justify-end mt-3 gap-1">
-        <Text className="text-xs" style={{ color: '#b07d4a' }}>Read reflection</Text>
-        <Feather name="arrow-right" size={12} color="#b07d4a" />
-      </View>
-    </Pressable>
-  );
+function groupByDate(entries: Entry[], digest: Digest | null): Section[] {
+  const groups: Record<string, EntryItem[]> = {};
+  for (const entry of entries) {
+    const label = getDayLabel(entry.created_at);
+    if (!groups[label]) groups[label] = [];
+    groups[label].push({ ...entry, _type: 'entry' });
+  }
+
+  const sections: Section[] = Object.entries(groups).map(([title, data]) => ({ title, data }));
+
+  if (digest) {
+    sections.push({
+      title: formatWeek(digest.week_start),
+      data: [{ ...digest, _type: 'digest' }],
+    });
+  }
+
+  return sections;
 }
+
+function preview(content: string) {
+  return content.length > 180 ? content.slice(0, 180).trimEnd() + '…' : content;
+}
+
+const CARD_COLORS = [
+  '#fdf0e8',
+  '#e8f4f0',
+  '#eee8f8',
+  '#f8f4e8',
+  '#e8f0f8',
+  '#f8e8ee',
+];
 
 export default function HomeScreen() {
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [latestDigest, setLatestDigest] = useState<Digest | null>(null);
+  const greeting = getGreeting();
 
-  async function fetchEntries() {
+  async function fetchEntries(digest: Digest | null) {
     const { data, error } = await supabase
       .from('journal_entries')
       .select('id, content, created_at')
       .order('created_at', { ascending: false });
-    if (!error && data) setSections(groupByDate(data));
+    if (!error && data) setSections(groupByDate(data, digest));
   }
 
-  async function fetchLatestDigest() {
-    const { data } = await supabase
-      .from('weekly_digests')
-      .select('id, content, week_start')
-      .order('week_start', { ascending: false })
-      .limit(1)
-      .single();
-    if (data) setLatestDigest(data);
+  async function fetchAll() {
+    const [{ data: entryData }, { data: digestData }] = await Promise.all([
+      supabase.from('journal_entries').select('id, content, created_at').order('created_at', { ascending: false }),
+      supabase.from('weekly_digests').select('id, content, week_start').order('week_start', { ascending: false }).limit(1).single(),
+    ]);
+    const digest = digestData ?? null;
+    setLatestDigest(digest);
+    if (entryData) setSections(groupByDate(entryData, digest));
   }
 
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      Promise.all([fetchEntries(), fetchLatestDigest()]).finally(() => setLoading(false));
+      fetchAll().finally(() => setLoading(false));
     }, [])
   );
 
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: '#fafaf8' }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#faf9f7' }}>
         <ActivityIndicator color="#4f46e5" />
       </View>
     );
   }
 
+  const hasContent = sections.length > 0;
+
   return (
-    <View className="flex-1" style={{ backgroundColor: '#fafaf8' }}>
+    <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
       {/* Header */}
-      <View className="flex-row items-center justify-between px-6 pt-16 pb-4">
-        <Text className="text-3xl font-bold" style={{ color: '#1c1917' }}>Journal</Text>
-        <Pressable
-          className="w-10 h-10 rounded-full items-center justify-center"
-          style={{ backgroundColor: '#f0ede8' }}
-          onPress={() => router.push('/profile')}>
-          <Feather name="user" size={20} color="#78716c" />
-        </Pressable>
+      <View style={{ paddingHorizontal: 24, paddingTop: 64, paddingBottom: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <View>
+            <Text style={{ fontSize: 13, fontFamily: 'Inter_500Medium', color: '#a8a29e', marginBottom: 4 }}>
+              {greeting.emoji}  {greeting.text}
+            </Text>
+            <Text style={{ fontSize: 32, fontFamily: 'PlayfairDisplay_700Bold', color: '#1c1917', lineHeight: 40 }}>
+              Journal
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => router.push('/profile')}
+            style={{
+              width: 40, height: 40, borderRadius: 20,
+              backgroundColor: '#f0ede8',
+              alignItems: 'center', justifyContent: 'center',
+              marginTop: 8,
+            }}>
+            <Feather name="user" size={18} color="#78716c" />
+          </Pressable>
+        </View>
       </View>
 
-      {latestDigest && (
-        <View className="px-4">
-          <DigestCard digest={latestDigest} />
-        </View>
-      )}
-
-      {sections.length === 0 ? (
-        <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-5xl mb-4">✍️</Text>
-          <Text className="text-xl font-semibold mb-2" style={{ color: '#1c1917' }}>Nothing here yet</Text>
-          <Text className="text-center" style={{ color: '#a8a29e' }}>Tap New Entry to write your first journal entry.</Text>
+      {!hasContent ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+          <Text style={{ fontSize: 48, marginBottom: 16 }}>✍️</Text>
+          <Text style={{ fontSize: 22, fontFamily: 'PlayfairDisplay_600SemiBold', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
+            Nothing here yet
+          </Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', textAlign: 'center', lineHeight: 24 }}>
+            Tap New Entry to write your first journal entry.
+          </Text>
         </View>
       ) : (
         <SectionList
           sections={sections}
           keyExtractor={item => item.id}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await Promise.all([fetchEntries(), fetchLatestDigest()]); setRefreshing(false); }} tintColor="#4f46e5" />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={async () => {
+                setRefreshing(true);
+                await fetchAll();
+                setRefreshing(false);
+              }}
+              tintColor="#4f46e5"
+            />
           }
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
           stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }) => (
-            <View className="pt-6 pb-2 px-2">
-              <Text className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#a8a29e' }}>
+            <View style={{ paddingTop: 20, paddingBottom: 6, paddingHorizontal: 4 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.4, textTransform: 'uppercase', color: '#c4b9b0' }}>
                 {section.title}
               </Text>
             </View>
           )}
-          renderItem={({ item, index, section }) => {
-            const isLast = index === section.data.length - 1;
+          renderItem={({ item }) => {
+            if (item._type === 'digest') {
+              return (
+                <Pressable
+                  onPress={() => router.push(`/digest/${item.id}`)}
+                  style={{
+                    backgroundColor: '#fdf3e3',
+                    borderRadius: 16,
+                    marginBottom: 10,
+                    paddingHorizontal: 18,
+                    paddingTop: 14,
+                    paddingBottom: 16,
+                  }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                    <Text style={{ fontSize: 13 }}>🌿</Text>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', color: '#b07d4a' }}>
+                      Weekly Reflection
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 15, fontFamily: 'Inter_400Regular', color: '#292524', lineHeight: 24, marginBottom: 10 }} numberOfLines={3}>
+                    {item.content}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_500Medium', color: '#b07d4a' }}>Read full reflection</Text>
+                    <Feather name="arrow-right" size={11} color="#b07d4a" />
+                  </View>
+                </Pressable>
+              );
+            }
+
+            const bg = CARD_COLORS[item.id.charCodeAt(0) % CARD_COLORS.length];
+            const time = new Date(item.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
             return (
               <Pressable
                 onPress={() => router.push(`/entry/${item.id}`)}
-                style={({ pressed }) => ({
-                  backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
+                style={{
+                  backgroundColor: bg,
                   borderRadius: 16,
-                  padding: 16,
-                  marginBottom: isLast ? 0 : 8,
-                  shadowColor: '#1c1917',
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.06,
-                  shadowRadius: 4,
-                  elevation: 2,
-                })}>
-                <Text style={{ fontSize: 17, lineHeight: 26, color: '#292524' }}>
+                  marginBottom: 10,
+                  paddingHorizontal: 18,
+                  paddingTop: 14,
+                  paddingBottom: 16,
+                }}>
+                <Text style={{
+                  fontSize: 15,
+                  fontFamily: 'Inter_400Regular',
+                  color: '#292524',
+                  lineHeight: 24,
+                  marginBottom: 10,
+                }}>
                   {preview(item.content)}
                 </Text>
-                <Text className="mt-2 text-xs" style={{ color: '#c4b9b0' }}>{formatTime(item.created_at)}</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#a8a29e' }}>
+                  {time}
+                </Text>
               </Pressable>
             );
           }}

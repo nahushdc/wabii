@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wabii — Patient Journal</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #faf9f7; color: #1c1917; }
+
+    /* Layout */
+    .wrap { max-width: 700px; margin: 0 auto; padding: 48px 24px 80px; }
+
+    /* Header */
+    .brand { font-size: 11px; font-weight: 600; letter-spacing: 1.4px; text-transform: uppercase; color: #a8a29e; margin-bottom: 20px; }
+    h1 { font-family: Georgia, serif; font-size: 32px; font-weight: 700; color: #1c1917; line-height: 1.2; margin-bottom: 10px; }
+    .sub { font-size: 14px; color: #78716c; line-height: 1.65; margin-bottom: 16px; }
+    .expiry { display: inline-block; font-size: 12px; color: #b07d4a; background: #fdf3e3; border-radius: 20px; padding: 5px 14px; }
+    .divider { height: 1px; background: #f0ebe3; margin: 36px 0 28px; }
+
+    /* Search */
+    .search-wrap { position: relative; margin-bottom: 28px; }
+    .search-wrap input { width: 100%; font-size: 14px; color: #1c1917; background: #fff; border: 1px solid #e8e0d4; border-radius: 12px; padding: 12px 16px 12px 42px; outline: none; transition: border-color 0.15s; font-family: inherit; }
+    .search-wrap input:focus { border-color: #4f46e5; }
+    .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #a8a29e; font-size: 15px; pointer-events: none; }
+    .search-count { font-size: 12px; color: #a8a29e; margin-bottom: 14px; min-height: 18px; }
+
+    /* Section */
+    .section-label { font-size: 10px; font-weight: 600; letter-spacing: 1.4px; text-transform: uppercase; color: #c4b9b0; margin-bottom: 14px; }
+
+    /* Cards */
+    .summary-card { background: #fdf6ee; border-radius: 14px; padding: 22px; margin-bottom: 12px; }
+    .summary-card .week { font-size: 10px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: #b07d4a; margin-bottom: 10px; }
+    .summary-card p { font-size: 15px; line-height: 1.85; color: #292524; font-family: Georgia, serif; }
+
+    .entry-card { background: #fff; border-radius: 14px; padding: 22px; margin-bottom: 10px; border: 1px solid #f0ebe3; }
+    .entry-card .date { font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #a8a29e; margin-bottom: 12px; }
+    .entry-card p { font-size: 15px; line-height: 1.85; color: #1c1917; font-family: Georgia, serif; }
+
+    .hidden { display: none !important; }
+    .no-results { font-size: 14px; color: #a8a29e; font-style: italic; padding: 8px 0; }
+
+    /* Notice */
+    .notice { font-size: 12px; color: #a8a29e; background: #f0ebe3; border-radius: 12px; padding: 16px 20px; margin-top: 48px; line-height: 1.65; }
+
+    /* Password gate */
+    #gate { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
+    .gate-card { background: #fff; border-radius: 20px; padding: 36px 32px; width: 100%; max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,0.06); }
+    .gate-card h2 { font-family: Georgia, serif; font-size: 22px; color: #1c1917; margin-bottom: 8px; }
+    .gate-card .sub { font-size: 13px; color: #a8a29e; margin-bottom: 24px; line-height: 1.5; }
+    .gate-card label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: #c4b9b0; margin-bottom: 8px; }
+    .gate-card input { width: 100%; background: #faf9f7; border: 1px solid #e8e0d4; border-radius: 12px; padding: 13px 16px; font-size: 15px; color: #1c1917; outline: none; transition: border-color 0.15s; font-family: inherit; }
+    .gate-card input:focus { border-color: #4f46e5; }
+    .gate-card .error { font-size: 13px; color: #ef4444; margin-top: 8px; min-height: 20px; }
+    .gate-card button { margin-top: 16px; width: 100%; background: #4f46e5; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit; transition: opacity 0.15s; }
+    .gate-card button:hover { opacity: 0.9; }
+    .gate-card button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Loading / error state */
+    #loading, #error-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; text-align: center; padding: 24px; gap: 12px; }
+    #loading .spinner { width: 32px; height: 32px; border: 3px solid #e8e0d4; border-top-color: #4f46e5; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #error-state .emoji { font-size: 48px; }
+    #error-state h2 { font-family: Georgia, serif; font-size: 22px; color: #1c1917; }
+    #error-state p { font-size: 14px; color: #78716c; max-width: 320px; line-height: 1.6; }
+
+    @media (max-width: 600px) { h1 { font-size: 26px; } .wrap { padding: 32px 16px 60px; } }
+  </style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="spinner"></div>
+  <p style="font-size:14px;color:#a8a29e;">Loading journal…</p>
+</div>
+
+<!-- Error -->
+<div id="error-state" style="display:none">
+  <div class="emoji">🔒</div>
+  <h2>Access unavailable</h2>
+  <p id="error-msg">This link is invalid, expired, or has been revoked.</p>
+</div>
+
+<!-- Password gate -->
+<div id="gate" style="display:none">
+  <div class="gate-card">
+    <div class="brand" style="margin-bottom:16px">Wabii</div>
+    <h2>🔐 Protected journal</h2>
+    <p class="sub">Your patient has password-protected this journal. Enter the password they shared with you.</p>
+    <label>Password</label>
+    <input type="password" id="passwordInput" placeholder="Enter password" />
+    <div class="error" id="passwordError"></div>
+    <button id="unlockBtn" onclick="submitPassword()">View journal</button>
+  </div>
+</div>
+
+<!-- Portal -->
+<div id="portal" style="display:none">
+  <div class="wrap">
+    <div class="brand">Wabii</div>
+    <h1 id="portalTitle"></h1>
+    <p class="sub">Your patient shared their journal with you — entries from the last 30 days and all weekly AI reflections are included below.</p>
+    <span class="expiry" id="portalExpiry"></span>
+    <div class="divider"></div>
+
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" placeholder="Search entries and reflections…" oninput="handleSearch(this.value)" />
+    </div>
+    <div class="search-count" id="searchCount"></div>
+
+    <div id="summariesSection">
+      <div class="section-label">Weekly reflections</div>
+      <div id="summariesList"></div>
+    </div>
+
+    <div id="entriesSection" style="margin-top:36px">
+      <div class="section-label">Journal entries — last 30 days</div>
+      <div id="entriesList"></div>
+    </div>
+
+    <div class="no-results hidden" id="noResults">No entries match your search.</div>
+
+    <div class="notice">
+      This journal was shared privately by your patient via Wabii. Please treat this content with the same confidentiality as any clinical material. Your patient can revoke your access at any time.
+    </div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://vkuxebtqryiphzeoecay.supabase.co';
+  const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZrdXhlYnRxcnlpcGh6ZW9lY2F5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU0MTg4MTMsImV4cCI6MjA2MDk5NDgxM30.oe4TN17dPAODcIqiEoICjGHhRmhLMbqBU26NrFDLPM0';
+  const API = `${SUPABASE_URL}/functions/v1/therapist-portal`;
+
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+
+  function show(id) {
+    ['loading','error-state','gate','portal'].forEach(s => {
+      document.getElementById(s).style.display = s === id ? (id === 'portal' ? 'block' : 'flex') : 'none';
+    });
+  }
+
+  function showError(msg) {
+    document.getElementById('error-msg').textContent = msg;
+    show('error-state');
+  }
+
+  async function apiFetch(path, opts = {}) {
+    const res = await fetch(`${API}${path}`, {
+      ...opts,
+      headers: { 'apikey': ANON_KEY, 'Content-Type': 'application/json', ...(opts.headers ?? {}) },
+    });
+    return { ok: res.ok, data: await res.json() };
+  }
+
+  async function init() {
+    if (!token) { showError('No access token in the URL.'); return; }
+
+    const { ok, data } = await apiFetch(`?token=${token}&apikey=${ANON_KEY}`);
+
+    if (!ok) {
+      const msgs = { not_found: "This link doesn't exist.", revoked: 'Your patient has revoked access.', expired: 'This link has expired. Ask your patient to send a new one.' };
+      showError(msgs[data.error] ?? 'Something went wrong.');
+      return;
+    }
+
+    if (data.requires_password) { show('gate'); return; }
+    renderPortal(data);
+  }
+
+  async function submitPassword() {
+    const btn = document.getElementById('unlockBtn');
+    const pw = document.getElementById('passwordInput').value;
+    const errEl = document.getElementById('passwordError');
+    errEl.textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+
+    const { ok, data } = await apiFetch('', {
+      method: 'POST',
+      headers: { 'apikey': ANON_KEY },
+      body: JSON.stringify({ token, password: pw }),
+    });
+
+    if (!ok) {
+      errEl.textContent = data.error === 'wrong_password' ? 'Incorrect password. Please try again.' : 'Something went wrong.';
+      btn.disabled = false;
+      btn.textContent = 'View journal';
+      return;
+    }
+
+    // Password correct — fetch full data
+    const { ok: ok2, data: portal } = await apiFetch(`?token=${token}&apikey=${ANON_KEY}&authenticated=1`);
+    if (!ok2) { showError('Could not load journal data.'); return; }
+    renderPortal(portal);
+  }
+
+  document.getElementById('passwordInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitPassword();
+  });
+
+  function fmt(iso) {
+    return new Date(iso).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+  }
+  function fmtTime(iso) {
+    return new Date(iso).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true });
+  }
+  function fmtWeek(dateStr) {
+    const d = new Date(dateStr), e = new Date(d);
+    e.setDate(d.getDate() + 6);
+    const f = x => x.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+    return `${f(d)} – ${f(e)}`;
+  }
+  function esc(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+  }
+
+  function renderPortal(data) {
+    document.title = `${data.user_name}'s Journal — Wabii`;
+    document.getElementById('portalTitle').textContent = `${data.user_name}'s Journal`;
+
+    const exp = new Date(data.expires_at).toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
+    document.getElementById('portalExpiry').textContent = `🔒 Access expires ${exp}`;
+
+    const sl = document.getElementById('summariesList');
+    if (!data.summaries.length) {
+      sl.innerHTML = '<p style="color:#a8a29e;font-style:italic;font-size:14px;">No weekly reflections yet.</p>';
+    } else {
+      sl.innerHTML = data.summaries.map(s => `
+        <div class="summary-card">
+          <div class="week">🌿 Week of ${fmtWeek(s.week_start)}</div>
+          <p>${esc(s.content)}</p>
+        </div>`).join('');
+    }
+
+    const el = document.getElementById('entriesList');
+    if (!data.entries.length) {
+      el.innerHTML = '<p style="color:#a8a29e;font-style:italic;font-size:14px;">No entries in the last 30 days.</p>';
+    } else {
+      el.innerHTML = data.entries.map(e => `
+        <div class="entry-card">
+          <div class="date">${fmt(e.created_at)} · ${fmtTime(e.created_at)}</div>
+          <p>${esc(e.content)}</p>
+        </div>`).join('');
+    }
+
+    show('portal');
+  }
+
+  function handleSearch(query) {
+    const q = query.trim().toLowerCase();
+    let count = 0;
+    document.querySelectorAll('.entry-card, .summary-card').forEach(el => {
+      const show = !q || el.textContent.toLowerCase().includes(q);
+      el.classList.toggle('hidden', !show);
+      if (show) count++;
+    });
+    document.getElementById('searchCount').textContent = q ? `${count} result${count !== 1 ? 's' : ''} for "${query.trim()}"` : '';
+    document.getElementById('noResults').classList.toggle('hidden', !q || count > 0);
+  }
+
+  init();
+</script>
+</body>
+</html>

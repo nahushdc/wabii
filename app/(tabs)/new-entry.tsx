@@ -1,8 +1,13 @@
 import { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { router } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
+
+function getTodayLabel() {
+  return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
 
 export default function NewEntryScreen() {
   const [content, setContent] = useState('');
@@ -19,7 +24,6 @@ export default function NewEntryScreen() {
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Save entry
     const { data: entry, error: entryErr } = await supabase
       .from('journal_entries')
       .insert({ user_id: user!.id, content: content.trim() })
@@ -28,24 +32,18 @@ export default function NewEntryScreen() {
 
     if (entryErr || !entry) { setError(entryErr?.message ?? 'Failed to save.'); setLoading(false); return; }
 
-    // Save tags and entry_tags
     if (tags.length > 0) {
       for (const tag of tags) {
-        // Upsert tag (create if not exists, reuse if exists)
         const { data: tagRow, error: tagErr } = await supabase
           .from('tags')
           .upsert({ user_id: user!.id, name: tag.name, category: tag.category }, { onConflict: 'user_id,name' })
           .select('id')
           .single();
-
         if (tagErr || !tagRow) continue;
-
-        // Link tag to entry
         await supabase.from('entry_tags').insert({ entry_id: entry.id, tag_id: tagRow.id });
       }
     }
 
-    // Generate embedding in background (don't block save)
     supabase.functions.invoke('embed-entry', {
       body: { entry_id: entry.id, content: content.trim() },
     });
@@ -58,51 +56,71 @@ export default function NewEntryScreen() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-white"
+      style={{ flex: 1, backgroundColor: '#faf9f7' }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView
-        className="flex-1"
+        style={{ flex: 1 }}
         contentContainerStyle={{ flexGrow: 1 }}
         keyboardShouldPersistTaps="handled">
 
         {/* Header */}
-        <View className="flex-row items-center justify-between px-6 pt-16 pb-4 border-b border-gray-100">
-          <Text className="text-lg font-semibold text-gray-900">New entry</Text>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          paddingHorizontal: 24, paddingTop: 64, paddingBottom: 16,
+        }}>
+          <Pressable onPress={() => router.replace('/(tabs)')} style={{ padding: 4 }}>
+            <Feather name="arrow-left" size={22} color="#78716c" />
+          </Pressable>
           <Pressable
-            className="bg-indigo-600 rounded-xl px-5 py-2"
             onPress={handleSave}
-            disabled={loading}>
+            disabled={loading}
+            style={{
+              backgroundColor: content.trim() ? '#4f46e5' : '#e7e5e4',
+              borderRadius: 20, paddingHorizontal: 20, paddingVertical: 8,
+            }}>
             {loading
               ? <ActivityIndicator color="white" size="small" />
-              : <Text className="text-white font-semibold text-sm">Save</Text>}
+              : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: content.trim() ? '#ffffff' : '#a8a29e' }}>Save</Text>}
           </Pressable>
         </View>
 
+        {/* Date */}
+        <View style={{ paddingHorizontal: 24, paddingBottom: 4 }}>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e' }}>
+            {getTodayLabel()}
+          </Text>
+        </View>
+
         {error ? (
-          <View className="mx-6 mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-            <Text className="text-red-600 text-sm">{error}</Text>
+          <View style={{ marginHorizontal: 24, marginTop: 8, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
           </View>
         ) : null}
 
         {/* Writing area */}
         <TextInput
-          className="px-6 py-5 text-base text-gray-900 leading-relaxed"
-          placeholder="What's on your mind?"
-          placeholderTextColor="#9ca3af"
+          style={{
+            paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16,
+            fontSize: 18, fontFamily: 'Inter_400Regular',
+            color: '#1c1917', lineHeight: 30,
+            minHeight: 340, textAlignVertical: 'top',
+          }}
+          placeholder="What's on your mind today?"
+          placeholderTextColor="#c4b9b0"
           value={content}
           onChangeText={setContent}
           multiline
           autoFocus
-          textAlignVertical="top"
-          style={{ minHeight: 380 }}
         />
 
         {/* Tags */}
         <TagPicker selected={tags} onChange={setTags} />
 
         {/* Word count */}
-        <View className="px-6 pb-8 pt-2">
-          <Text className="text-xs text-gray-400">{wordCount} {wordCount === 1 ? 'word' : 'words'}</Text>
+        <View style={{ paddingHorizontal: 24, paddingBottom: 32, paddingTop: 8 }}>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#c4b9b0' }}>
+            {wordCount} {wordCount === 1 ? 'word' : 'words'}
+          </Text>
         </View>
 
       </ScrollView>

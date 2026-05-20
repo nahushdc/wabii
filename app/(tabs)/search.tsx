@@ -16,7 +16,7 @@ function formatDate(iso: string) {
 }
 
 function preview(content: string) {
-  return content.length > 120 ? content.slice(0, 120).trimEnd() + '…' : content;
+  return content.length > 140 ? content.slice(0, 140).trimEnd() + '…' : content;
 }
 
 export default function SearchScreen() {
@@ -33,7 +33,6 @@ export default function SearchScreen() {
     setSearched(true);
 
     const { data: { user } } = await supabase.auth.getUser();
-
     const { data, error: err } = await supabase.functions.invoke('search-entries', {
       body: { query: query.trim(), user_id: user!.id, match_count: 10 },
     });
@@ -44,70 +43,100 @@ export default function SearchScreen() {
   }
 
   return (
-    <View className="flex-1 bg-white">
+    <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
       {/* Header */}
-      <View className="px-6 pt-16 pb-4">
-        <Text className="text-2xl font-bold text-gray-900 mb-4">Search</Text>
-        <View className="flex-row items-center gap-3">
-          <View className="flex-1 flex-row items-center border border-gray-200 rounded-xl px-4 gap-2">
-            <Feather name="search" size={18} color="#9ca3af" />
-            <TextInput
-              className="flex-1 py-3 text-base text-gray-900"
-              placeholder="What's on your mind?"
-              placeholderTextColor="#9ca3af"
-              value={query}
-              onChangeText={setQuery}
-              onSubmitEditing={handleSearch}
-              returnKeyType="search"
-              autoCapitalize="none"
-            />
-            {query.length > 0 && (
-              <Pressable onPress={() => { setQuery(''); setResults([]); setSearched(false); }}>
-                <Feather name="x" size={16} color="#9ca3af" />
-              </Pressable>
-            )}
-          </View>
+      <View style={{ paddingHorizontal: 24, paddingTop: 64, paddingBottom: 20 }}>
+        <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 32, color: '#1c1917', marginBottom: 20 }}>
+          Search
+        </Text>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          backgroundColor: '#ffffff', borderRadius: 16,
+          paddingHorizontal: 16, paddingVertical: 4,
+          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+          gap: 10,
+        }}>
+          <Feather name="search" size={18} color="#c4b9b0" />
+          <TextInput
+            style={{ flex: 1, paddingVertical: 12, fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917' }}
+            placeholder="Search your memories…"
+            placeholderTextColor="#c4b9b0"
+            value={query}
+            onChangeText={setQuery}
+            onSubmitEditing={handleSearch}
+            returnKeyType="search"
+            autoCapitalize="none"
+          />
+          {query.length > 0 && (
+            <Pressable onPress={() => { setQuery(''); setResults([]); setSearched(false); }}>
+              <Feather name="x" size={16} color="#c4b9b0" />
+            </Pressable>
+          )}
           <Pressable
-            className="bg-indigo-600 rounded-xl px-4 py-3"
             onPress={handleSearch}
-            disabled={loading}>
+            disabled={loading}
+            style={{
+              backgroundColor: query.trim() ? '#4f46e5' : '#e7e5e4',
+              borderRadius: 10, padding: 8,
+            }}>
             {loading
               ? <ActivityIndicator color="white" size="small" />
-              : <Feather name="search" size={18} color="white" />}
+              : <Feather name="arrow-right" size={16} color="white" />}
           </Pressable>
         </View>
       </View>
 
       {error ? (
-        <View className="mx-6 mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-          <Text className="text-red-600 text-sm">{error}</Text>
+        <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
         </View>
       ) : null}
 
       {!searched ? (
-        <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-4xl mb-4">🔍</Text>
-          <Text className="text-lg font-semibold text-gray-700 mb-2">Semantic search</Text>
-          <Text className="text-gray-400 text-center">Search by meaning, not just words. Try "feeling overwhelmed at work" or "moments of joy".</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
+          <Text style={{ fontSize: 48, marginBottom: 16 }}>🔍</Text>
+          <Text style={{ fontFamily: 'PlayfairDisplay_600SemiBold', fontSize: 20, color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
+            Search by feeling
+          </Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', textAlign: 'center', lineHeight: 24 }}>
+            Try "feeling overwhelmed at work" or "a moment I felt proud of myself".
+          </Text>
         </View>
       ) : results.length === 0 && !loading ? (
-        <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-gray-400 text-center">No entries found. Try a different search.</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
+          <Text style={{ fontSize: 40, marginBottom: 12 }}>🌾</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', textAlign: 'center' }}>
+            Nothing found. Try searching with different words.
+          </Text>
         </View>
       ) : (
         <FlatList
           data={results}
           keyExtractor={item => item.id}
-          contentContainerStyle={{ paddingBottom: 32 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
           renderItem={({ item }) => (
             <Pressable
-              className="px-6 py-4 border-b border-gray-50 active:bg-gray-50"
-              onPress={() => router.push(`/entry/${item.id}`)}>
-              <View className="flex-row items-center justify-between mb-1">
-                <Text className="text-xs font-medium" style={{ color: '#4f46e5' }}>{formatDate(item.created_at)}</Text>
-                <Text className="text-xs text-gray-400">{Math.round(item.similarity * 100)}% match</Text>
+              onPress={() => router.push(`/entry/${item.id}`)}
+              style={({ pressed }) => ({
+                backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
+                borderRadius: 18, padding: 18, marginBottom: 10,
+                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+              })}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#b07d4a' }}>
+                  {formatDate(item.created_at)}
+                </Text>
+                <View style={{ backgroundColor: '#eef2ff', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 11, color: '#4f46e5' }}>
+                    {Math.round(item.similarity * 100)}% match
+                  </Text>
+                </View>
               </View>
-              <Text className="text-gray-800 text-base leading-relaxed">{preview(item.content)}</Text>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#292524', lineHeight: 24 }}>
+                {preview(item.content)}
+              </Text>
             </Pressable>
           )}
         />
