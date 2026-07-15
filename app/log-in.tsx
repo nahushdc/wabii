@@ -5,6 +5,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
 import { signInWithGoogle } from '@/lib/auth';
 import { PasswordInput } from '@/components/password-input';
+import { WarmBackground } from '@/components/warm-background';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -34,12 +35,13 @@ export default function LogInScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#faf9f7' }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <WarmBackground>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 48 }} keyboardShouldPersistTaps="handled">
 
         {/* Brand */}
         <View style={{ marginBottom: 40 }}>
-          <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 40, color: '#1c1917', marginBottom: 8 }}>
+          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 40, color: '#1c1917', marginBottom: 8 }}>
             Wabii
           </Text>
           <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: '#a8a29e' }}>
@@ -81,7 +83,7 @@ export default function LogInScreen() {
 
         <Link href="/forgot-password" asChild>
           <Pressable style={{ alignSelf: 'flex-end', paddingVertical: 8, marginBottom: 24 }}>
-            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#4f46e5' }}>Forgot password?</Text>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#E85D2C' }}>Forgot password?</Text>
           </Pressable>
         </Link>
 
@@ -89,7 +91,7 @@ export default function LogInScreen() {
         <Pressable
           onPress={handleLogIn}
           disabled={loading}
-          style={{ backgroundColor: '#4f46e5', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12 }}>
+          style={{ backgroundColor: '#E85D2C', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12 }}>
           {loading
             ? <ActivityIndicator color="white" />
             : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Log in</Text>}
@@ -104,7 +106,7 @@ export default function LogInScreen() {
             shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
           }}>
           {googleLoading
-            ? <ActivityIndicator color="#4f46e5" />
+            ? <ActivityIndicator color="#E85D2C" />
             : <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 16, color: '#1c1917' }}>Continue with Google</Text>}
         </Pressable>
 
@@ -112,12 +114,13 @@ export default function LogInScreen() {
           <Pressable style={{ alignItems: 'center' }}>
             <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#a8a29e' }}>
               Don't have an account?{' '}
-              <Text style={{ fontFamily: 'Inter_600SemiBold', color: '#4f46e5' }}>Sign up</Text>
+              <Text style={{ fontFamily: 'Inter_600SemiBold', color: '#E85D2C' }}>Sign up</Text>
             </Text>
           </Pressable>
         </Link>
 
       </ScrollView>
     </KeyboardAvoidingView>
+    </WarmBackground>
   );
 }

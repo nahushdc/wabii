@@ -16,6 +16,21 @@ function getLocalHour(timezone: string, date: Date): number {
   return hour === 24 ? 0 : hour; // handle midnight edge case
 }
 
+// Get the current minute (0–59) in a given timezone
+function getLocalMinute(timezone: string, date: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    minute: 'numeric',
+  }).formatToParts(date);
+  return parseInt(parts.find(p => p.type === 'minute')?.value ?? '0');
+}
+
+// Get the current day of week (0=Sun..6=Sat) in a given timezone
+function getLocalDayOfWeek(timezone: string, date: Date): number {
+  const localDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(date); // "YYYY-MM-DD"
+  return new Date(`${localDateStr}T00:00:00Z`).getUTCDay();
+}
+
 // Get the UTC timestamp for midnight of today in a given timezone
 function getStartOfLocalDay(timezone: string, date: Date): Date {
   const localDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(date); // "YYYY-MM-DD"
@@ -30,49 +45,66 @@ Deno.serve(async () => {
   try {
     const now = new Date();
 
-    // Fetch all users with notifications enabled and a push token
-    const { data: users, error } = await supabase
-      .from('users')
-      .select('id, push_token, timezone, notify_hour')
-      .eq('notify_enabled', true)
-      .not('push_token', 'is', null);
+    // Fetch all enabled reminders, joined with the owning user's push token and timezone
+    const { data: reminders, error } = await supabase
+      .from('reminders')
+      .select('id, user_id, hour, minute, days_of_week, message, skip_if_journaled, prompt_theme_id, users!inner(push_token, timezone)')
+      .eq('enabled', true);
 
     if (error) throw error;
 
     const toSend = [];
     const results = [];
 
-    for (const user of users ?? []) {
-      const timezone = user.timezone || 'UTC';
-      const localHour = getLocalHour(timezone, now);
-
-      // Only proceed if it's their chosen reminder hour
-      if (localHour !== (user.notify_hour ?? 19)) {
-        results.push({ user_id: user.id, status: 'skipped — not their hour' });
+    for (const reminder of reminders ?? []) {
+      const user = reminder.users as unknown as { push_token: string | null; timezone: string | null };
+      if (!user?.push_token) {
+        results.push({ reminder_id: reminder.id, status: 'skipped — no push token' });
         continue;
       }
 
-      // Check if they've already journaled today (in their local timezone)
-      const startOfDay = getStartOfLocalDay(timezone, now);
-      const { count } = await supabase
-        .from('journal_entries')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .gte('created_at', startOfDay.toISOString());
+      const timezone = user.timezone || 'UTC';
+      const localHour = getLocalHour(timezone, now);
+      const localMinute = getLocalMinute(timezone, now);
 
-      if ((count ?? 0) > 0) {
-        results.push({ user_id: user.id, status: 'skipped — already journaled today' });
+      // Only proceed if it's this reminder's exact chosen time
+      if (localHour !== reminder.hour || localMinute !== reminder.minute) {
+        results.push({ reminder_id: reminder.id, status: 'skipped — not its time' });
         continue;
+      }
+
+      // Only proceed if today is one of this reminder's chosen days
+      const localDayOfWeek = getLocalDayOfWeek(timezone, now);
+      if (!reminder.days_of_week?.includes(localDayOfWeek)) {
+        results.push({ reminder_id: reminder.id, status: 'skipped — not its day' });
+        continue;
+      }
+
+      // Check if they've already journaled today (in their local timezone),
+      // but only skip on that basis if this reminder opted into that behavior.
+      if (reminder.skip_if_journaled) {
+        const startOfDay = getStartOfLocalDay(timezone, now);
+        const { count } = await supabase
+          .from('journal_entries')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', reminder.user_id)
+          .gte('created_at', startOfDay.toISOString());
+
+        if ((count ?? 0) > 0) {
+          results.push({ reminder_id: reminder.id, status: 'skipped — already journaled today' });
+          continue;
+        }
       }
 
       toSend.push({
         to: user.push_token,
         title: 'Time to reflect 🌿',
-        body: "How was your day? Take a moment to write.",
+        body: reminder.message?.trim() || "How was your day? Take a moment to write.",
         sound: 'default',
+        data: { prompt_theme_id: reminder.prompt_theme_id ?? null },
       });
 
-      results.push({ user_id: user.id, status: 'notification sent' });
+      results.push({ reminder_id: reminder.id, status: 'notification sent' });
     }
 
     // Send all notifications in one batch via Expo Push API

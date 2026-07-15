@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { View, Text, SectionList, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { WarmBackground } from '@/components/warm-background';
 
 type Digest = {
   id: string;
@@ -25,12 +26,12 @@ type Section = {
   data: SectionItem[];
 };
 
-function getGreeting() {
+function getGreetingEmoji() {
   const hour = new Date().getHours();
-  if (hour < 12) return { text: 'Good morning', emoji: '☀️' };
-  if (hour < 17) return { text: 'Good afternoon', emoji: '🌤️' };
-  if (hour < 21) return { text: 'Good evening', emoji: '🌇' };
-  return { text: 'Good night', emoji: '🌙' };
+  if (hour < 12) return '☀️';
+  if (hour < 17) return '🌤️';
+  if (hour < 21) return '🌇';
+  return '🌙';
 }
 
 function getDayLabel(iso: string) {
@@ -75,21 +76,69 @@ function preview(content: string) {
   return content.length > 180 ? content.slice(0, 180).trimEnd() + '…' : content;
 }
 
-const CARD_COLORS = [
-  '#fdf0e8',
-  '#e8f4f0',
-  '#eee8f8',
-  '#f8f4e8',
-  '#e8f0f8',
-  '#f8e8ee',
+function getFirstName(nameOrEmail: string) {
+  if (nameOrEmail.includes('@')) return '';
+  return nameOrEmail.split(/\s+/)[0];
+}
+
+// Previous "vivid jewel-tone" palette — kept here so we can revert by
+// swapping which array CARD_COLORS points to below.
+const CARD_COLORS_VIVID = [
+  '#F6C453',
+  '#C3DE6B',
+  '#4FC1AE',
+  '#5B9BD9',
+  '#A47FDE',
+  '#F0A93A',
+  '#35A891',
+  '#E0982F',
+];
+
+// Same hues as CARD_COLORS_VIVID, blended ~45% toward white for a softer,
+// lighter feel while keeping each card's paired text color unchanged.
+const CARD_COLORS_LIGHT = [
+  '#FADFA0',
+  '#DEEDAE',
+  '#9EDDD2',
+  '#A5C8EA',
+  '#CDB9ED',
+  '#F7D093',
+  '#90CFC3',
+  '#EEC68D',
+];
+
+const CARD_COLORS = CARD_COLORS_LIGHT;
+
+// A darker shade of each card color above, same order, for the entry text —
+// keeps each card tonally consistent instead of using flat black/gray text.
+const CARD_TEXT_COLORS = [
+  '#6B4400',
+  '#3F4D12',
+  '#0B3D35',
+  '#1B3A5C',
+  '#3D2463',
+  '#6B3D06',
+  '#0E3D33',
+  '#5C3A08',
 ];
 
 export default function HomeScreen() {
   const [sections, setSections] = useState<Section[]>([]);
+  const [hasEntries, setHasEntries] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [latestDigest, setLatestDigest] = useState<Digest | null>(null);
-  const greeting = getGreeting();
+  const [chatEntryIds, setChatEntryIds] = useState<Set<string>>(new Set());
+  const [firstName, setFirstName] = useState('');
+  const greetingEmoji = getGreetingEmoji();
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      const name = user.user_metadata?.full_name ?? user.user_metadata?.name ?? '';
+      if (name) setFirstName(getFirstName(name));
+    });
+  }, []);
 
   async function fetchEntries(digest: Digest | null) {
     const { data, error } = await supabase
@@ -100,13 +149,19 @@ export default function HomeScreen() {
   }
 
   async function fetchAll() {
-    const [{ data: entryData }, { data: digestData }] = await Promise.all([
+    const [{ data: entryData }, { data: digestData }, { data: conversationData }] = await Promise.all([
       supabase.from('journal_entries').select('id, content, created_at').order('created_at', { ascending: false }),
       supabase.from('weekly_digests').select('id, content, week_start').order('week_start', { ascending: false }).limit(1).single(),
+      supabase.from('chat_conversations').select('entry_id'),
     ]);
-    const digest = digestData ?? null;
+    const entries = entryData ?? [];
+    // A digest is only meaningful once there's at least one real entry —
+    // ignore stray digest rows for accounts with none.
+    const digest = entries.length > 0 ? (digestData ?? null) : null;
     setLatestDigest(digest);
-    if (entryData) setSections(groupByDate(entryData, digest));
+    setHasEntries(entries.length > 0);
+    setSections(groupByDate(entries, digest));
+    setChatEntryIds(new Set((conversationData ?? []).map(c => c.entry_id)));
   }
 
   useFocusEffect(
@@ -118,49 +173,39 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#faf9f7' }}>
-        <ActivityIndicator color="#4f46e5" />
-      </View>
+      <WarmBackground style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color="#E85D2C" />
+      </WarmBackground>
     );
   }
 
-  const hasContent = sections.length > 0;
-
   return (
-    <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+    <WarmBackground>
       {/* Header */}
       <View style={{ paddingHorizontal: 24, paddingTop: 64, paddingBottom: 20 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View>
-            <Text style={{ fontSize: 13, fontFamily: 'Inter_500Medium', color: '#a8a29e', marginBottom: 4 }}>
-              {greeting.emoji}  {greeting.text}
-            </Text>
-            <Text style={{ fontSize: 32, fontFamily: 'PlayfairDisplay_700Bold', color: '#1c1917', lineHeight: 40 }}>
-              Journal
-            </Text>
-          </View>
-          <Pressable
-            onPress={() => router.push('/profile')}
-            style={{
-              width: 40, height: 40, borderRadius: 20,
-              backgroundColor: '#f0ede8',
-              alignItems: 'center', justifyContent: 'center',
-              marginTop: 8,
-            }}>
-            <Feather name="user" size={18} color="#78716c" />
-          </Pressable>
-        </View>
+        <Text style={{ fontSize: 24, fontFamily: 'Inter_700Bold', color: '#44403c', lineHeight: 30 }}>
+          {greetingEmoji}  Hey{firstName ? ` ${firstName}` : ' there'}
+        </Text>
       </View>
 
-      {!hasContent ? (
+      {!hasEntries ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
           <Text style={{ fontSize: 48, marginBottom: 16 }}>✍️</Text>
-          <Text style={{ fontSize: 22, fontFamily: 'PlayfairDisplay_600SemiBold', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
+          <Text style={{ fontSize: 22, fontFamily: 'Inter_600SemiBold', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
             Nothing here yet
           </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', textAlign: 'center', lineHeight: 24 }}>
-            Tap New Entry to write your first journal entry.
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', textAlign: 'center', lineHeight: 24, marginBottom: 24 }}>
+            Your journal is waiting. Write down whatever's on your mind.
           </Text>
+          <Pressable
+            onPress={() => router.push('/(tabs)/new-entry')}
+            style={{
+              backgroundColor: '#E85D2C', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 24,
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+            }}>
+            <Feather name="edit-3" size={16} color="#ffffff" />
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#ffffff' }}>Add your first journal entry</Text>
+          </Pressable>
         </View>
       ) : (
         <SectionList
@@ -174,10 +219,10 @@ export default function HomeScreen() {
                 await fetchAll();
                 setRefreshing(false);
               }}
-              tintColor="#4f46e5"
+              tintColor="#E85D2C"
             />
           }
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 180 }}
           stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }) => (
             <View style={{ paddingTop: 20, paddingBottom: 6, paddingHorizontal: 4 }}>
@@ -192,12 +237,13 @@ export default function HomeScreen() {
                 <Pressable
                   onPress={() => router.push(`/digest/${item.id}`)}
                   style={{
-                    backgroundColor: '#fdf3e3',
+                    backgroundColor: '#ffffff',
                     borderRadius: 16,
                     marginBottom: 10,
                     paddingHorizontal: 18,
                     paddingTop: 14,
                     paddingBottom: 16,
+                    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
                   }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                     <Text style={{ fontSize: 13 }}>🌿</Text>
@@ -216,8 +262,11 @@ export default function HomeScreen() {
               );
             }
 
-            const bg = CARD_COLORS[item.id.charCodeAt(0) % CARD_COLORS.length];
+            const colorIndex = item.id.charCodeAt(0) % CARD_COLORS.length;
+            const bg = CARD_COLORS[colorIndex];
+            const textColor = CARD_TEXT_COLORS[colorIndex];
             const time = new Date(item.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            const hasChat = chatEntryIds.has(item.id);
             return (
               <Pressable
                 onPress={() => router.push(`/entry/${item.id}`)}
@@ -230,22 +279,39 @@ export default function HomeScreen() {
                   paddingBottom: 16,
                 }}>
                 <Text style={{
-                  fontSize: 15,
+                  fontSize: 16,
                   fontFamily: 'Inter_400Regular',
-                  color: '#292524',
-                  lineHeight: 24,
+                  color: textColor,
+                  lineHeight: 25,
                   marginBottom: 10,
                 }}>
                   {preview(item.content)}
                 </Text>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#a8a29e' }}>
-                  {time}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: textColor, opacity: 0.7 }}>
+                    {time}
+                  </Text>
+                  {hasChat && (
+                    <Pressable
+                      onPress={() => router.push(`/chat/${item.id}`)}
+                      hitSlop={8}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 4,
+                        backgroundColor: 'rgba(232, 93, 44, 0.1)',
+                        borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4,
+                      }}>
+                      <Feather name="message-circle" size={11} color="#E85D2C" />
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: '#E85D2C' }}>
+                        Continue chat
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
               </Pressable>
             );
           }}
         />
       )}
-    </View>
+    </WarmBackground>
   );
 }

@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable, ActivityIndicator, ScrollView, Share,
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { WarmBackground } from '@/components/warm-background';
 
 type TherapistLink = {
   id: string;
@@ -134,13 +135,14 @@ export default function TherapistInviteScreen() {
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#faf9f7' }} contentContainerStyle={{ paddingBottom: 48 }}>
+    <WarmBackground>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 48 }}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 64, paddingBottom: 20 }}>
         <Pressable onPress={() => router.back()} style={{ padding: 4, marginRight: 12 }}>
           <Feather name="arrow-left" size={22} color="#374151" />
         </Pressable>
-        <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 22, color: '#1c1917' }}>Share with therapist</Text>
+        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917' }}>Share with therapist</Text>
       </View>
 
       <View style={{ paddingHorizontal: 24 }}>
@@ -182,7 +184,7 @@ export default function TherapistInviteScreen() {
           flexDirection: 'row', alignItems: 'center',
           shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
         }}>
-          <Text style={{ flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#4f46e5', paddingHorizontal: 16, paddingVertical: 14, letterSpacing: 0.5 }}>
+          <Text style={{ flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#E85D2C', paddingHorizontal: 16, paddingVertical: 14, letterSpacing: 0.5 }}>
             {password}
           </Text>
           <Pressable onPress={handleCopyPassword} style={{ paddingHorizontal: 14, paddingVertical: 14 }}>
@@ -204,7 +206,7 @@ export default function TherapistInviteScreen() {
           onPress={handleGenerate}
           disabled={generating}
           style={{
-            backgroundColor: generating ? '#c4b9b0' : '#4f46e5',
+            backgroundColor: generating ? '#c4b9b0' : '#E85D2C',
             borderRadius: 14, paddingVertical: 16,
             flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
             marginBottom: 36,
@@ -219,7 +221,7 @@ export default function TherapistInviteScreen() {
 
         {/* Active links */}
         {loading ? (
-          <ActivityIndicator color="#4f46e5" />
+          <ActivityIndicator color="#E85D2C" />
         ) : links.length > 0 ? (
           <>
             <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 12 }}>
@@ -261,5 +263,6 @@ export default function TherapistInviteScreen() {
         ) : null}
       </View>
     </ScrollView>
+    </WarmBackground>
   );
 }

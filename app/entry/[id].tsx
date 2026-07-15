@@ -4,6 +4,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
+import { WarmBackground } from '@/components/warm-background';
 
 type Entry = {
   id: string;
@@ -95,22 +96,23 @@ export default function EntryDetailScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#faf9f7' }}>
-        <ActivityIndicator color="#4f46e5" />
-      </View>
+      <WarmBackground style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color="#E85D2C" />
+      </WarmBackground>
     );
   }
 
   if (!entry) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#faf9f7' }}>
+      <WarmBackground style={{ alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontFamily: 'Inter_400Regular', color: '#a8a29e' }}>Entry not found.</Text>
-      </View>
+      </WarmBackground>
     );
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#faf9f7' }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <WarmBackground>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       {/* Header */}
       <View style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -127,12 +129,15 @@ export default function EntryDetailScreen() {
               </Pressable>
               <Pressable onPress={handleSave} style={{ padding: 4 }} disabled={saving}>
                 {saving
-                  ? <ActivityIndicator size="small" color="#4f46e5" />
-                  : <Feather name="check" size={22} color="#4f46e5" />}
+                  ? <ActivityIndicator size="small" color="#E85D2C" />
+                  : <Feather name="check" size={22} color="#E85D2C" />}
               </Pressable>
             </>
           ) : (
             <>
+              <Pressable onPress={() => router.push(`/chat/${id}`)} style={{ padding: 4 }}>
+                <Feather name="message-circle" size={20} color="#78716c" />
+              </Pressable>
               <Pressable onPress={() => setEditing(true)} style={{ padding: 4 }}>
                 <Feather name="edit-2" size={20} color="#78716c" />
               </Pressable>
@@ -198,5 +203,6 @@ export default function EntryDetailScreen() {
         )}
       </ScrollView>
     </KeyboardAvoidingView>
+    </WarmBackground>
   );
 }

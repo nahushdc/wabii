@@ -3,6 +3,7 @@ import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-nati
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { WarmBackground } from '@/components/warm-background';
 
 type Digest = {
   id: string;
@@ -56,22 +57,22 @@ export default function DigestScreen() {
 
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: '#fdfaf6' }}>
-        <ActivityIndicator color="#4f46e5" />
-      </View>
+      <WarmBackground style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color="#E85D2C" />
+      </WarmBackground>
     );
   }
 
   if (!digest) {
     return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: '#fdfaf6' }}>
+      <WarmBackground style={{ alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ color: '#a8a29e' }}>Reflection not found.</Text>
-      </View>
+      </WarmBackground>
     );
   }
 
   return (
-    <View className="flex-1" style={{ backgroundColor: '#fdfaf6' }}>
+    <WarmBackground>
       {/* Header */}
       <View className="px-6 pt-16 pb-4">
         <Pressable onPress={() => router.back()} className="p-1 mb-6" style={{ alignSelf: 'flex-start' }}>
@@ -126,6 +127,6 @@ export default function DigestScreen() {
           <Text style={{ fontSize: 16 }}>👎</Text>
         </Pressable>
       </View>
-    </View>
+    </WarmBackground>
   );
 }
