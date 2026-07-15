@@ -79,10 +79,10 @@ export function TagPicker({ selected, onChange }: Props) {
 
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16 }}>
-            <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 22, color: '#1c1917' }}>Add tags</Text>
+            <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917' }}>Add tags</Text>
             <Pressable
               onPress={() => setOpen(false)}
-              style={{ backgroundColor: '#4f46e5', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 }}>
+              style={{ backgroundColor: '#E85D2C', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 }}>
               <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#ffffff' }}>Done</Text>
             </Pressable>
           </View>

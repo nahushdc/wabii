@@ -3,6 +3,7 @@ import { View, Text, Pressable, ActivityIndicator, Share, ScrollView } from 'rea
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { WarmBackground } from '@/components/warm-background';
 
 type Format = 'text' | 'markdown';
 
@@ -105,13 +106,14 @@ export default function ExportScreen() {
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#faf9f7' }} contentContainerStyle={{ paddingBottom: 48 }}>
+    <WarmBackground>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 48 }}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 64, paddingBottom: 20 }}>
         <Pressable onPress={() => router.back()} style={{ padding: 4, marginRight: 12 }}>
           <Feather name="arrow-left" size={22} color="#374151" />
         </Pressable>
-        <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 22, color: '#1c1917' }}>Share with therapist</Text>
+        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917' }}>Share with therapist</Text>
       </View>
 
       <View style={{ paddingHorizontal: 24 }}>
@@ -120,10 +122,10 @@ export default function ExportScreen() {
         {entryCount !== null && (
           <View style={{
             alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6,
-            backgroundColor: '#eef2ff', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginBottom: 28,
+            backgroundColor: '#FDE6DB', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginBottom: 28,
           }}>
             <Text style={{ fontSize: 14 }}>📓</Text>
-            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#4f46e5' }}>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#E85D2C' }}>
               {entryCount} {entryCount === 1 ? 'entry' : 'entries'} will be exported
             </Text>
           </View>
@@ -145,14 +147,14 @@ export default function ExportScreen() {
                 key={opt.id}
                 onPress={() => setFormat(opt.id)}
                 style={{
-                  flex: 1, backgroundColor: active ? '#eef2ff' : '#ffffff',
+                  flex: 1, backgroundColor: active ? '#FDE6DB' : '#ffffff',
                   borderRadius: 16, padding: 16,
-                  borderWidth: 1.5, borderColor: active ? '#4f46e5' : 'transparent',
+                  borderWidth: 1.5, borderColor: active ? '#E85D2C' : 'transparent',
                   shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
                 }}>
                 <Text style={{ fontSize: 20, marginBottom: 8 }}>{opt.emoji}</Text>
-                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: active ? '#4f46e5' : '#1c1917', marginBottom: 4 }}>{opt.label}</Text>
-                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: active ? '#818cf8' : '#a8a29e', lineHeight: 17 }}>{opt.desc}</Text>
+                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: active ? '#E85D2C' : '#1c1917', marginBottom: 4 }}>{opt.label}</Text>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: active ? '#C2410C' : '#a8a29e', lineHeight: 17 }}>{opt.desc}</Text>
               </Pressable>
             );
           })}
@@ -180,7 +182,7 @@ export default function ExportScreen() {
           onPress={handleExport}
           disabled={exporting || entryCount === 0}
           style={{
-            backgroundColor: exporting || entryCount === 0 ? '#c4b9b0' : '#4f46e5',
+            backgroundColor: exporting || entryCount === 0 ? '#c4b9b0' : '#E85D2C',
             borderRadius: 16, paddingVertical: 18,
             flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
           }}>
@@ -194,5 +196,6 @@ export default function ExportScreen() {
 
       </View>
     </ScrollView>
+    </WarmBackground>
   );
 }

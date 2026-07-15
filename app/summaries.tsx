@@ -3,6 +3,7 @@ import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl } 
 import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { WarmBackground } from '@/components/warm-background';
 
 type Digest = {
   id: string;
@@ -42,14 +43,14 @@ export default function SummariesScreen() {
 
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: '#fafaf8' }}>
-        <ActivityIndicator color="#4f46e5" />
-      </View>
+      <WarmBackground style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color="#E85D2C" />
+      </WarmBackground>
     );
   }
 
   return (
-    <View className="flex-1" style={{ backgroundColor: '#fafaf8' }}>
+    <WarmBackground>
       {/* Header */}
       <View className="flex-row items-center px-6 pt-16 pb-4">
         <Pressable onPress={() => router.back()} className="p-1 mr-4">
@@ -71,7 +72,7 @@ export default function SummariesScreen() {
           className="flex-1"
           contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchDigests(); setRefreshing(false); }} tintColor="#4f46e5" />
+            <RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await fetchDigests(); setRefreshing(false); }} tintColor="#E85D2C" />
           }>
           {digests.map(digest => {
             const isOpen = expanded === digest.id;
@@ -107,6 +108,6 @@ export default function SummariesScreen() {
           })}
         </ScrollView>
       )}
-    </View>
+    </WarmBackground>
   );
 }

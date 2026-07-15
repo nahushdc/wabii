@@ -3,6 +3,7 @@ import { View, Text, Pressable, ActivityIndicator, ScrollView, Linking } from 'r
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { WarmBackground } from '@/components/warm-background';
 
 function getInitials(nameOrEmail: string) {
   const parts = nameOrEmail.split(/[\s@]+/);
@@ -50,7 +51,7 @@ function StatBox({ value, label, emoji }: { value: string | number; label: strin
   return (
     <View style={{ flex: 1, alignItems: 'center', backgroundColor: '#ffffff', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 8 }}>
       <Text style={{ fontSize: 20 }}>{emoji}</Text>
-      <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 24, color: '#1c1917', marginTop: 4 }}>{value}</Text>
+      <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', marginTop: 4 }}>{value}</Text>
       <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: '#a8a29e', textAlign: 'center', marginTop: 2 }}>{label}</Text>
     </View>
   );
@@ -117,18 +118,19 @@ export default function ProfileScreen() {
   const initials = displayName ? getInitials(displayName) : '?';
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#faf9f7' }} contentContainerStyle={{ paddingBottom: 48 }}>
+    <WarmBackground>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 48 }}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 64, paddingBottom: 16 }}>
         <Pressable onPress={() => router.back()} style={{ padding: 4, marginRight: 12 }}>
           <Feather name="arrow-left" size={22} color="#374151" />
         </Pressable>
-        <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 22, color: '#1c1917' }}>Profile</Text>
+        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917' }}>Profile</Text>
       </View>
 
       {loading ? (
         <View style={{ alignItems: 'center', paddingVertical: 48 }}>
-          <ActivityIndicator color="#4f46e5" />
+          <ActivityIndicator color="#E85D2C" />
         </View>
       ) : (
         <>
@@ -136,15 +138,15 @@ export default function ProfileScreen() {
           <View style={{ alignItems: 'center', paddingVertical: 24, paddingHorizontal: 24 }}>
             <View style={{
               width: 72, height: 72, borderRadius: 36,
-              backgroundColor: '#eef2ff',
+              backgroundColor: '#FDE6DB',
               alignItems: 'center', justifyContent: 'center',
               marginBottom: 12,
             }}>
-              <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 26, color: '#4f46e5' }}>
+              <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 26, color: '#E85D2C' }}>
                 {initials}
               </Text>
             </View>
-            <Text style={{ fontFamily: 'PlayfairDisplay_600SemiBold', fontSize: 20, color: '#1c1917', marginBottom: 4 }}>
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 20, color: '#1c1917', marginBottom: 4 }}>
               {name || 'Your Name'}
             </Text>
             <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#a8a29e' }}>
@@ -167,7 +169,7 @@ export default function ProfileScreen() {
                 <Text style={{ fontSize: 20 }}>✍️</Text>
                 <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#78716c' }}>words written</Text>
               </View>
-              <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 20, color: '#1c1917' }}>
+              <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 20, color: '#1c1917' }}>
                 {totalWords >= 1000 ? `${(totalWords / 1000).toFixed(1)}k` : totalWords}
               </Text>
             </View>
@@ -179,6 +181,7 @@ export default function ProfileScreen() {
               Settings
             </Text>
             <MenuItem label="Notifications" icon="bell" onPress={() => router.push('/notifications')} />
+            <MenuItem label="Prompt Themes" icon="edit-3" onPress={() => router.push('/prompt-themes')} />
             <MenuItem label="Share with therapist" icon="share-2" onPress={() => router.push('/therapist-invite')} />
             <MenuItem label="Share feedback" icon="message-square" onPress={() => Linking.openURL('mailto:hello@wabii.app?subject=Feedback on Wabii')} />
           </View>
@@ -194,5 +197,6 @@ export default function ProfileScreen() {
         </>
       )}
     </ScrollView>
+    </WarmBackground>
   );
 }

@@ -31,3 +31,15 @@ entrypoint = "./functions/weekly-digest/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/weekly-digest/*.html" ]
+
+[functions.chat]
+enabled = true
+verify_jwt = true
+import_map = "./functions/chat/deno.json"
+entrypoint = "./functions/chat/index.ts"
+
+[functions.theme-insights]
+enabled = true
+verify_jwt = true
+import_map = "./functions/theme-insights/deno.json"
+entrypoint = "./functions/theme-insights/index.ts"

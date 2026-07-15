@@ -1,190 +1,146 @@
-import { useState, useEffect } from 'react';
-import { View, Text, Pressable, Switch, ActivityIndicator, TextInput, ScrollView } from 'react-native';
-import { router } from 'expo-router';
+import { useState, useCallback } from 'react';
+import { View, Text, Pressable, Switch, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { WarmBackground } from '@/components/warm-background';
 
-const TIMES = [
-  { label: 'Morning',   emoji: '🌅', time: '7:00 AM',  hour: 7  },
-  { label: 'Afternoon', emoji: '☀️',  time: '1:00 PM',  hour: 13 },
-  { label: 'Evening',   emoji: '🌇', time: '7:00 PM',  hour: 19 },
-  { label: 'Night',     emoji: '🌙', time: '10:00 PM', hour: 22 },
-];
+type Reminder = {
+  id: string;
+  hour: number;
+  minute: number;
+  message: string | null;
+  skip_if_journaled: boolean;
+  enabled: boolean;
+  days_of_week: number[];
+};
 
-const SUGGESTED_MESSAGES = [
-  "Hey, how was your day? 🌿",
-  "Take a moment to reflect ✨",
-  "What's on your mind today?",
-  "Time to check in with yourself 💭",
-];
+function formatTime(hour: number, minute: number) {
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12}:${minute.toString().padStart(2, '0')} ${period}`;
+}
+
+const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WEEKDAYS = [1, 2, 3, 4, 5];
+const WEEKEND = [0, 6];
+
+function formatDays(days: number[]) {
+  const sorted = [...days].sort((a, b) => a - b);
+  if (sorted.length === 7) return 'Every day';
+  if (sorted.length === 5 && WEEKDAYS.every(d => sorted.includes(d))) return 'Weekdays';
+  if (sorted.length === 2 && WEEKEND.every(d => sorted.includes(d))) return 'Weekends';
+  return sorted.map(d => DAY_ABBR[d]).join(', ');
+}
 
 export default function NotificationsScreen() {
-  const [enabled, setEnabled] = useState(false);
-  const [selectedHour, setSelectedHour] = useState(19);
-  const [skipIfJournaled, setSkipIfJournaled] = useState(true);
-  const [customMessage, setCustomMessage] = useState('');
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    async function fetchPrefs() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from('users')
-        .select('notify_enabled, notify_hour, notify_message, notify_skip_if_journaled')
-        .eq('id', user.id)
-        .single();
-      if (data) {
-        setEnabled(data.notify_enabled ?? false);
-        setSelectedHour(data.notify_hour ?? 19);
-        setCustomMessage(data.notify_message ?? '');
-        setSkipIfJournaled(data.notify_skip_if_journaled ?? true);
-      }
-      setLoading(false);
-    }
-    fetchPrefs();
-  }, []);
+  async function fetchReminders() {
+    const { data } = await supabase
+      .from('reminders')
+      .select('id, hour, minute, message, skip_if_journaled, enabled, days_of_week')
+      .order('hour', { ascending: true })
+      .order('minute', { ascending: true });
+    setReminders(data ?? []);
+  }
 
-  async function save(updates: Record<string, any>) {
-    setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase.from('users').update(updates).eq('id', user.id);
-    }
-    setSaving(false);
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      fetchReminders().finally(() => setLoading(false));
+    }, [])
+  );
+
+  async function toggleEnabled(reminder: Reminder, value: boolean) {
+    setReminders(prev => prev.map(r => (r.id === reminder.id ? { ...r, enabled: value } : r)));
+    await supabase.from('reminders').update({ enabled: value }).eq('id', reminder.id);
+  }
+
+  function handleDelete(reminder: Reminder) {
+    Alert.alert('Delete reminder', "This can't be undone.", [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          await supabase.from('reminders').delete().eq('id', reminder.id);
+          setReminders(prev => prev.filter(r => r.id !== reminder.id));
+        },
+      },
+    ]);
   }
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#faf9f7' }}>
-        <ActivityIndicator color="#4f46e5" />
-      </View>
+      <WarmBackground style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color="#E85D2C" />
+      </WarmBackground>
     );
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#faf9f7' }} contentContainerStyle={{ paddingBottom: 48 }}>
+    <WarmBackground>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 48 }}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 64, paddingBottom: 20 }}>
         <Pressable onPress={() => router.back()} style={{ padding: 4, marginRight: 12 }}>
           <Feather name="arrow-left" size={22} color="#374151" />
         </Pressable>
-        <Text style={{ fontFamily: 'PlayfairDisplay_700Bold', fontSize: 22, color: '#1c1917', flex: 1 }}>Notifications</Text>
-        {saving && <ActivityIndicator size="small" color="#a8a29e" />}
+        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917', flex: 1 }}>Reminders</Text>
+        <Pressable onPress={() => router.push('/reminder/new')} style={{ padding: 4 }}>
+          <Feather name="plus" size={22} color="#E85D2C" />
+        </Pressable>
       </View>
 
       <View style={{ paddingHorizontal: 24 }}>
-
-        {/* Main toggle */}
-        <View style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          backgroundColor: '#ffffff', borderRadius: 16, padding: 18, marginBottom: 24,
-          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
-        }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>Daily reminder</Text>
-            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e' }}>Get nudged to write each day</Text>
+        {reminders.length === 0 ? (
+          <View style={{ alignItems: 'center', paddingTop: 60, paddingHorizontal: 20 }}>
+            <Text style={{ fontSize: 40, marginBottom: 12 }}>🔔</Text>
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 18, color: '#1c1917', marginBottom: 6, textAlign: 'center' }}>
+              No reminders yet
+            </Text>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#a8a29e', textAlign: 'center', lineHeight: 20 }}>
+              Add one to get a gentle nudge to write.
+            </Text>
           </View>
-          <Switch
-            value={enabled}
-            onValueChange={v => { setEnabled(v); save({ notify_enabled: v }); }}
-            trackColor={{ false: '#e7e5e4', true: '#c7d2fe' }}
-            thumbColor={enabled ? '#4f46e5' : '#ffffff'}
-          />
-        </View>
-
-        {enabled && (
-          <>
-            {/* Time picker */}
-            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 10 }}>
-              Remind me at
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 }}>
-              {TIMES.map(t => {
-                const isSelected = selectedHour === t.hour;
-                return (
-                  <Pressable
-                    key={t.hour}
-                    onPress={() => { setSelectedHour(t.hour); save({ notify_hour: t.hour }); }}
-                    style={{
-                      flex: 1, minWidth: '45%',
-                      backgroundColor: isSelected ? '#eef2ff' : '#ffffff',
-                      borderRadius: 14, padding: 14,
-                      borderWidth: 1.5,
-                      borderColor: isSelected ? '#4f46e5' : 'transparent',
-                      shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-                    }}>
-                    <Text style={{ fontSize: 18, marginBottom: 4 }}>{t.emoji}</Text>
-                    <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: isSelected ? '#4f46e5' : '#1c1917' }}>{t.label}</Text>
-                    <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: isSelected ? '#818cf8' : '#a8a29e', marginTop: 1 }}>{t.time}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {/* Smart: skip if already journaled */}
-            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 10 }}>
-              Smart behaviour
-            </Text>
-            <View style={{
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              backgroundColor: '#ffffff', borderRadius: 16, padding: 18, marginBottom: 24,
-              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
-            }}>
+        ) : (
+          reminders.map(reminder => (
+            <Pressable
+              key={reminder.id}
+              onPress={() => router.push(`/reminder/${reminder.id}`)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                backgroundColor: '#ffffff', borderRadius: 16, padding: 18, marginBottom: 12,
+                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+              }}>
               <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#1c1917', marginBottom: 2 }}>Skip if already journaled</Text>
-                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
-                  No reminder on days you've already written an entry
+                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>
+                  {formatTime(reminder.hour, reminder.minute)}
+                </Text>
+                <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#E85D2C', marginBottom: 2 }}>
+                  {formatDays(reminder.days_of_week ?? [])}
+                </Text>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e' }} numberOfLines={1}>
+                  {reminder.message?.trim() || 'How was your day? Take a moment to write.'}
                 </Text>
               </View>
-              <Switch
-                value={skipIfJournaled}
-                onValueChange={v => { setSkipIfJournaled(v); save({ notify_skip_if_journaled: v }); }}
-                trackColor={{ false: '#e7e5e4', true: '#c7d2fe' }}
-                thumbColor={skipIfJournaled ? '#4f46e5' : '#ffffff'}
-              />
-            </View>
-
-            {/* Custom message */}
-            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 10 }}>
-              Reminder message
-            </Text>
-            <TextInput
-              style={{
-                backgroundColor: '#ffffff', borderRadius: 14,
-                paddingHorizontal: 16, paddingVertical: 14,
-                fontFamily: 'Inter_400Regular', fontSize: 14, color: '#1c1917',
-                marginBottom: 10,
-                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-              }}
-              placeholder="Write a custom reminder message…"
-              placeholderTextColor="#c4b9b0"
-              value={customMessage}
-              onChangeText={setCustomMessage}
-              onEndEditing={() => save({ notify_message: customMessage.trim() })}
-              returnKeyType="done"
-            />
-            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#b8b0a8', marginBottom: 10 }}>Suggestions:</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-              {SUGGESTED_MESSAGES.map(msg => (
-                <Pressable
-                  key={msg}
-                  onPress={() => { setCustomMessage(msg); save({ notify_message: msg }); }}
-                  style={{
-                    backgroundColor: customMessage === msg ? '#eef2ff' : '#f0ebe3',
-                    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
-                    borderWidth: 1, borderColor: customMessage === msg ? '#4f46e5' : 'transparent',
-                  }}>
-                  <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: customMessage === msg ? '#4f46e5' : '#78716c' }}>
-                    {msg}
-                  </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Switch
+                  value={reminder.enabled}
+                  onValueChange={v => toggleEnabled(reminder, v)}
+                  trackColor={{ false: '#e7e5e4', true: '#F5C7B0' }}
+                  thumbColor={reminder.enabled ? '#E85D2C' : '#ffffff'}
+                />
+                <Pressable onPress={() => handleDelete(reminder)} hitSlop={8} style={{ padding: 2 }}>
+                  <Feather name="trash-2" size={18} color="#ef4444" />
                 </Pressable>
-              ))}
-            </View>
-          </>
+              </View>
+            </Pressable>
+          ))
         )}
       </View>
     </ScrollView>
+    </WarmBackground>
   );
 }

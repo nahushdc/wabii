@@ -1,21 +1,53 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
+import { WarmBackground } from '@/components/warm-background';
 
 function getTodayLabel() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 export default function NewEntryScreen() {
+  const { themeId: deepLinkThemeId } = useLocalSearchParams<{ themeId?: string }>();
   const [content, setContent] = useState('');
   const [tags, setTags] = useState<SelectedTag[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [nightThemeId, setNightThemeId] = useState<string | null>(null);
+  const [activeThemeId, setActiveThemeId] = useState<string | null>(deepLinkThemeId ?? null);
+  const [prompts, setPrompts] = useState<string[]>([]);
+  const [promptIndex, setPromptIndex] = useState(0);
+
   const wordCount = content.trim() === '' ? 0 : content.trim().split(/\s+/).length;
+
+  // Whichever reminder has a theme linked powers the generic "Use a prompt" button
+  useEffect(() => {
+    supabase
+      .from('reminders')
+      .select('prompt_theme_id')
+      .not('prompt_theme_id', 'is', null)
+      .limit(1)
+      .then(({ data }) => {
+        if (data && data.length > 0) setNightThemeId(data[0].prompt_theme_id);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!activeThemeId) { setPrompts([]); return; }
+    supabase
+      .from('theme_prompts')
+      .select('prompt_text')
+      .eq('theme_id', activeThemeId)
+      .order('sort_order', { ascending: true })
+      .then(({ data }) => {
+        setPrompts((data ?? []).map(p => p.prompt_text));
+        setPromptIndex(0);
+      });
+  }, [activeThemeId]);
 
   async function handleSave() {
     setError('');
@@ -26,7 +58,7 @@ export default function NewEntryScreen() {
 
     const { data: entry, error: entryErr } = await supabase
       .from('journal_entries')
-      .insert({ user_id: user!.id, content: content.trim() })
+      .insert({ user_id: user!.id, content: content.trim(), prompt_theme_id: activeThemeId })
       .select('id')
       .single();
 
@@ -51,12 +83,14 @@ export default function NewEntryScreen() {
     setLoading(false);
     setContent('');
     setTags([]);
+    setActiveThemeId(null);
     router.replace('/(tabs)');
   }
 
   return (
+    <WarmBackground>
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView
         style={{ flex: 1 }}
@@ -75,7 +109,7 @@ export default function NewEntryScreen() {
             onPress={handleSave}
             disabled={loading}
             style={{
-              backgroundColor: content.trim() ? '#4f46e5' : '#e7e5e4',
+              backgroundColor: content.trim() ? '#E85D2C' : '#e7e5e4',
               borderRadius: 20, paddingHorizontal: 20, paddingVertical: 8,
             }}>
             {loading
@@ -96,6 +130,50 @@ export default function NewEntryScreen() {
             <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
           </View>
         ) : null}
+
+        {/* Prompt mode */}
+        {activeThemeId && prompts.length > 0 ? (
+          <View style={{
+            marginHorizontal: 24, marginTop: 12, backgroundColor: '#FDE6DB', borderRadius: 16,
+            paddingHorizontal: 18, paddingTop: 14, paddingBottom: 14,
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Feather name="edit-3" size={13} color="#E85D2C" />
+                <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', color: '#E85D2C' }}>
+                  Prompt
+                </Text>
+              </View>
+              <Pressable onPress={() => setActiveThemeId(null)} hitSlop={8}>
+                <Feather name="x" size={16} color="#C2410C" />
+              </Pressable>
+            </View>
+            <Text style={{ fontSize: 16, fontFamily: 'Inter_500Medium', color: '#292524', lineHeight: 24, marginBottom: 10 }}>
+              {prompts[promptIndex]}
+            </Text>
+            {prompts.length > 1 && (
+              <Pressable
+                onPress={() => setPromptIndex(i => (i + 1) % prompts.length)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' }}>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: '#E85D2C' }}>Next prompt</Text>
+                <Feather name="arrow-right" size={12} color="#E85D2C" />
+              </Pressable>
+            )}
+          </View>
+        ) : (
+          !activeThemeId && nightThemeId && (
+            <Pressable
+              onPress={() => setActiveThemeId(nightThemeId)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+                marginHorizontal: 24, marginTop: 12,
+                backgroundColor: '#f0ebe3', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+              }}>
+              <Feather name="edit-3" size={13} color="#78716c" />
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_500Medium', color: '#78716c' }}>Use a prompt</Text>
+            </Pressable>
+          )
+        )}
 
         {/* Writing area */}
         <TextInput
@@ -125,5 +203,6 @@ export default function NewEntryScreen() {
 
       </ScrollView>
     </KeyboardAvoidingView>
+    </WarmBackground>
   );
 }
