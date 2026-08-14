@@ -25,6 +25,8 @@ function generatePassword(): string {
   return `${w1}-${w2}-${num}`;
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function daysLeft(expiresAt: string): number {
   return Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 864e5));
 }
@@ -44,6 +46,9 @@ export default function TherapistInviteScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+
+  const isValidEmail = EMAIL_REGEX.test(email.trim());
 
   useEffect(() => { fetchLinks(); }, []);
 
@@ -60,7 +65,8 @@ export default function TherapistInviteScreen() {
 
   async function handleGenerate() {
     setError('');
-    if (!email.trim() || !email.includes('@')) {
+    setEmailTouched(true);
+    if (!isValidEmail) {
       setError('Please enter a valid email address.');
       return;
     }
@@ -83,14 +89,14 @@ export default function TherapistInviteScreen() {
 
       const shareMessage =
         `Hi, I'd like to share my journal with you via Wabii so you can review my entries before our sessions.\n\n` +
-        `🔗 Access link (valid for 7 days):\n${result.url}\n\n` +
+        `🔗 Access link (valid for 48 hours):\n${result.url}\n\n` +
         `🔐 Password: ${password}\n\n` +
         `Open the link and enter the password to access my journal.`;
 
       setEmail('');
       setPassword(generatePassword()); // fresh password for next time
       await fetchLinks();
-      await Share.share({ message: shareMessage, title: 'Journal access for your therapist' });
+      await Share.share({ message: shareMessage, title: 'Journal access for your coach' });
     } catch (e: any) {
       setError(e.message);
     }
@@ -124,7 +130,7 @@ export default function TherapistInviteScreen() {
     const portalBase = process.env.EXPO_PUBLIC_THERAPIST_PORTAL_URL ?? 'https://wabii-portal.vercel.app';
     const url = `${portalBase}?token=${data.token}`;
     await Share.share({
-      message: `Hi, here's your access link to my Wabii journal (valid for 7 days):\n\n🔗 ${url}\n\nUse the password I shared with you when I first sent this.`,
+      message: `Hi, here's your access link to my Wabii journal (valid for 48 hours):\n\n🔗 ${url}\n\nUse the password I shared with you when I first sent this.`,
     });
   }
 
@@ -142,38 +148,58 @@ export default function TherapistInviteScreen() {
         <Pressable onPress={() => router.back()} style={{ padding: 4, marginRight: 12 }}>
           <Feather name="arrow-left" size={22} color="#374151" />
         </Pressable>
-        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917' }}>Share with therapist</Text>
+        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917' }}>Share with coach</Text>
       </View>
 
       <View style={{ paddingHorizontal: 24 }}>
 
         {/* Explainer */}
-        <View style={{ backgroundColor: '#fdf6ee', borderRadius: 16, padding: 18, marginBottom: 28 }}>
-          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#b07d4a', marginBottom: 6 }}>🌿 How it works</Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#78716c', lineHeight: 20 }}>
-            Generate a private, password-protected link for your therapist. They open it in any browser — no account needed. Access expires in 7 days and you can revoke it anytime.
-          </Text>
+        <View style={{
+          backgroundColor: '#ffffff', borderRadius: 16, padding: 18, marginBottom: 28, gap: 12,
+          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+        }}>
+          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#b07d4a' }}>🌿 How it works</Text>
+          {[
+            { icon: 'lock', label: 'Private, password-protected link' },
+            { icon: 'globe', label: 'Opens in any browser — no account needed' },
+            { icon: 'clock', label: 'Access expires in 48 hours, revoke anytime' },
+          ].map(item => (
+            <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Feather name={item.icon as any} size={14} color="#b07d4a" />
+              <Text style={{ flex: 1, fontFamily: 'Inter_400Regular', fontSize: 13, color: '#78716c', lineHeight: 19 }}>
+                {item.label}
+              </Text>
+            </View>
+          ))}
         </View>
 
         {/* Email */}
         <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 10 }}>
-          Therapist's email
+          Coach's email
         </Text>
         <TextInput
           style={{
             backgroundColor: '#ffffff', borderRadius: 14,
             paddingHorizontal: 16, paddingVertical: 14,
             fontFamily: 'Inter_400Regular', fontSize: 15, color: '#1c1917',
-            marginBottom: 20,
+            marginBottom: emailTouched && email.length > 0 && !isValidEmail ? 6 : 20,
+            borderWidth: emailTouched && email.length > 0 ? 1 : 0,
+            borderColor: isValidEmail ? '#22c55e' : '#ef4444',
             shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
           }}
-          placeholder="therapist@example.com"
+          placeholder="coach@example.com"
           placeholderTextColor="#c4b9b0"
           value={email}
           onChangeText={setEmail}
+          onBlur={() => setEmailTouched(true)}
           autoCapitalize="none"
           keyboardType="email-address"
         />
+        {emailTouched && email.length > 0 && !isValidEmail ? (
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#ef4444', marginBottom: 20 }}>
+            Please enter a valid email address.
+          </Text>
+        ) : null}
 
         {/* Auto-generated password */}
         <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 10 }}>
@@ -215,7 +241,7 @@ export default function TherapistInviteScreen() {
             ? <ActivityIndicator color="white" />
             : <>
                 <Feather name="link" size={16} color="white" />
-                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#ffffff' }}>Generate & share link</Text>
+                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#ffffff' }}>Share temporary access</Text>
               </>}
         </Pressable>
 

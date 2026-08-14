@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { PasswordInput } from '@/components/password-input';
+import { WarmBackground } from '@/components/warm-background';
 
 export default function ResetPasswordScreen() {
   const [password, setPassword] = useState('');
@@ -23,44 +24,52 @@ export default function ResetPasswordScreen() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View className="flex-1 justify-center px-8">
-        <Text className="text-2xl font-bold text-gray-900 mb-2">Set new password</Text>
-        <Text className="text-gray-500 mb-10">Choose a strong password for your account.</Text>
+    <WarmBackground>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 48 }} keyboardShouldPersistTaps="handled">
+
+        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', marginBottom: 8 }}>
+          Set new password
+        </Text>
+        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', marginBottom: 32, lineHeight: 22 }}>
+          Choose a strong password for your account.
+        </Text>
 
         {error ? (
-          <View className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
-            <Text className="text-red-600 text-sm">{error}</Text>
+          <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#ef4444' }}>{error}</Text>
           </View>
         ) : null}
 
-        <Text className="text-sm font-medium text-gray-700 mb-1">New password</Text>
+        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#78716c', marginBottom: 6 }}>New password</Text>
         <PasswordInput
-          className="mb-4"
           placeholder="At least 6 characters"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor="#c4b9b0"
           value={password}
           onChangeText={setPassword}
+          style={{ marginBottom: 16 }}
         />
 
-        <Text className="text-sm font-medium text-gray-700 mb-1">Confirm password</Text>
+        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#78716c', marginBottom: 6 }}>Confirm password</Text>
         <PasswordInput
-          className="mb-6"
           placeholder="Same password again"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor="#c4b9b0"
           value={confirm}
           onChangeText={setConfirm}
+          style={{ marginBottom: 24 }}
         />
 
         <Pressable
-          className="bg-indigo-600 rounded-xl py-4 items-center"
           onPress={handleUpdate}
-          disabled={loading}>
+          disabled={loading}
+          style={{ backgroundColor: '#E85D2C', borderRadius: 16, paddingVertical: 16, alignItems: 'center' }}>
           {loading
             ? <ActivityIndicator color="white" />
-            : <Text className="text-white font-semibold text-base">Update password</Text>}
+            : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Update password</Text>}
         </Pressable>
-      </View>
+
+      </ScrollView>
     </KeyboardAvoidingView>
+    </WarmBackground>
   );
 }

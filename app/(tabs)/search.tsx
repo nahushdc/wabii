@@ -1,31 +1,59 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, FlatList, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, FlatList, ActivityIndicator, ScrollView } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 
-type Result = {
-  id: string;
-  content: string;
-  created_at: string;
-  similarity: number;
-};
-
 type ThemeOption = { id: string; name: string };
+
+type MonthlyDigest = { id: string; content: string; month_start: string; seen_at: string | null };
+type WeeklyDigestSummary = { id: string; week_start: string; seen_at: string | null };
 
 type FeedItem =
   | { type: 'search'; id: string; created_at: string; query: string }
   | { type: 'chat'; id: string; created_at: string; entryId: string; preview: string }
-  | { type: 'insight'; id: string; created_at: string; themeName: string }
-  | { type: 'digest'; id: string; created_at: string };
+  | { type: 'insight'; id: string; created_at: string; themeName: string };
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
+const FEED_STYLES = {
+  search: { icon: 'clock' as const, chipBg: '#F0EBE3', color: '#8a7a6f', tag: 'Search' },
+  chat: { icon: 'message-circle' as const, chipBg: '#FDE6DB', color: '#E85D2C', tag: 'Chat' },
+  insight: { icon: 'bar-chart-2' as const, chipBg: '#EFE6FB', color: '#6D4CAD', tag: 'Insight' },
+};
+
+type FeedFilter = 'all' | FeedItem['type'];
+
+const FILTERS: { key: FeedFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'search', label: 'Search' },
+  { key: 'chat', label: 'Chat' },
+  { key: 'insight', label: 'Insight' },
+];
+
+// Alternating pastel + slight rotation for each mini weekly card, so the row
+// reads like a little scattered stack of notes rather than a rigid list.
+const WEEKLY_CARD_STYLES = [
+  { bg: '#E6F3E0', accent: '#3F7A3F', rotate: '-3deg' },
+  { bg: '#FDE6DB', accent: '#C2410C', rotate: '2deg' },
+  { bg: '#EFE6FB', accent: '#6D4CAD', rotate: '-2deg' },
+  { bg: '#FCEFCF', accent: '#A87B1B', rotate: '3deg' },
+];
 
 function preview(content: string) {
   return content.length > 140 ? content.slice(0, 140).trimEnd() + '…' : content;
+}
+
+function formatWeek(dateStr: string) {
+  const date = new Date(dateStr);
+  const end = new Date(date);
+  end.setDate(date.getDate() + 6);
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(date)} – ${fmt(end)}`;
+}
+
+function formatMonth(dateStr: string) {
+  const date = new Date(`${dateStr}T00:00:00`);
+  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
 function formatRelative(iso: string) {
@@ -40,26 +68,36 @@ function formatRelative(iso: string) {
 }
 
 export default function SearchScreen() {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Result[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
-  const [error, setError] = useState('');
-
   const [themes, setThemes] = useState<ThemeOption[]>([]);
   const [insightLoadingId, setInsightLoadingId] = useState<string | null>(null);
+  const [latestMonthly, setLatestMonthly] = useState<MonthlyDigest | null>(null);
+  const [weeklyDigests, setWeeklyDigests] = useState<WeeklyDigestSummary[]>([]);
 
   const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [filter, setFilter] = useState<FeedFilter>('all');
 
   useEffect(() => {
-    supabase.from('prompt_themes').select('id, name').order('created_at', { ascending: false }).then(({ data }) => {
+    supabase.from('prompt_themes').select('id, name').eq('status', 'active').order('created_at', { ascending: false }).then(({ data }) => {
       setThemes(data ?? []);
     });
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      if (searched) return;
+      supabase
+        .from('monthly_digests')
+        .select('id, content, month_start, seen_at')
+        .order('month_start', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => setLatestMonthly(data ?? null));
+
+      supabase
+        .from('weekly_digests')
+        .select('id, week_start, seen_at')
+        .order('week_start', { ascending: false })
+        .limit(10)
+        .then(({ data }) => setWeeklyDigests(data ?? []));
 
       Promise.all([
         supabase
@@ -69,7 +107,8 @@ export default function SearchScreen() {
           .limit(30),
         supabase
           .from('chat_conversations')
-          .select('id, updated_at, entry_id, journal_entries(content)')
+          .select('id, updated_at, entry_id, journal_entries(content), chat_messages(id)')
+          .not('entry_id', 'is', null)
           .order('updated_at', { ascending: false })
           .limit(30),
         supabase
@@ -77,68 +116,29 @@ export default function SearchScreen() {
           .select('id, created_at, prompt_themes(name)')
           .order('created_at', { ascending: false })
           .limit(30),
-        supabase
-          .from('weekly_digests')
-          .select('id, week_start')
-          .order('week_start', { ascending: false })
-          .limit(30),
-      ]).then(([searchRes, chatRes, insightRes, digestRes]) => {
+      ]).then(([searchRes, chatRes, insightRes]) => {
         const searches: FeedItem[] = (searchRes.data ?? []).map(s => ({
           type: 'search', id: s.id, created_at: s.created_at, query: s.query,
         }));
-        const chats: FeedItem[] = (chatRes.data ?? []).map((c: any) => ({
-          type: 'chat', id: c.id, created_at: c.updated_at, entryId: c.entry_id,
-          preview: c.journal_entries?.content ?? '',
-        }));
+        const chats: FeedItem[] = (chatRes.data ?? [])
+          .filter((c: any) => (c.chat_messages?.length ?? 0) >= 2)
+          .map((c: any) => ({
+            type: 'chat', id: c.id, created_at: c.updated_at, entryId: c.entry_id,
+            preview: c.journal_entries?.content ?? '',
+          }));
         const insights: FeedItem[] = (insightRes.data ?? []).map((i: any) => ({
           type: 'insight', id: i.id, created_at: i.created_at,
           themeName: i.prompt_themes?.name ?? 'Theme',
         }));
-        const digests: FeedItem[] = (digestRes.data ?? []).map(d => ({
-          type: 'digest', id: d.id, created_at: d.week_start,
-        }));
 
         setFeed(
-          [...searches, ...chats, ...insights, ...digests].sort(
+          [...searches, ...chats, ...insights].sort(
             (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           )
         );
       });
-    }, [searched])
+    }, [])
   );
-
-  async function runSearch(q: string) {
-    if (!q.trim()) return;
-    setError('');
-    setLoading(true);
-    setSearched(true);
-
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error: err } = await supabase.functions.invoke('search-entries', {
-      body: { query: q.trim(), user_id: user!.id, match_count: 10 },
-    });
-
-    setLoading(false);
-    if (err || data?.error) { setError(data?.error ?? err?.message ?? 'Search failed.'); return; }
-    setResults(data.results ?? []);
-
-    supabase.from('search_history').insert({ user_id: user!.id, query: q.trim() });
-  }
-
-  function handleSearch() {
-    runSearch(query);
-  }
-
-  function clearSearch() {
-    setQuery('');
-    setResults([]);
-    setSearched(false);
-  }
-
-  function rerunFromHistory(q: string) {
-    setQuery(q);
-    runSearch(q);
-  }
 
   async function handleSeeInsights(theme: ThemeOption) {
     setInsightLoadingId(theme.id);
@@ -157,61 +157,111 @@ export default function SearchScreen() {
     if (data?.id) router.push(`/theme-insight/${data.id}`);
   }
 
+  const filteredFeed = filter === 'all' ? feed : feed.filter(item => item.type === filter);
+
   return (
     <WarmBackground>
       {/* Header */}
       <View style={{ paddingHorizontal: 24, paddingTop: 64, paddingBottom: 12 }}>
-        <Text style={{ fontSize: 40, marginBottom: 12 }}>🔍</Text>
+        <Text style={{ fontSize: 40, marginBottom: 12 }}>🪞</Text>
         <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 28, color: '#1c1917', marginBottom: 8 }}>
-          Search by feeling
+          Reflect
         </Text>
         <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#a8a29e', lineHeight: 21, marginBottom: 20 }}>
-          Try "feeling overwhelmed at work" or "a moment I felt proud of myself".
+          Revisit your searches, chats, and the patterns in how you journal.
         </Text>
+      </View>
 
-        <View style={{
-          backgroundColor: '#ffffff', borderRadius: 16,
-          paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10,
-          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
-        }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-            <Feather name="search" size={18} color="#c4b9b0" style={{ marginTop: 3 }} />
-            <TextInput
-              style={{
-                flex: 1, minHeight: 64, fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917',
-                textAlignVertical: 'top',
-              }}
-              placeholder="Search your memories…"
-              placeholderTextColor="#c4b9b0"
-              value={query}
-              onChangeText={setQuery}
-              autoCapitalize="none"
-              multiline
-            />
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 14, marginTop: 8 }}>
-            {query.length > 0 && (
-              <Pressable onPress={clearSearch}>
-                <Feather name="x" size={16} color="#c4b9b0" />
-              </Pressable>
-            )}
+      {/* Monthly reflection — the headline card */}
+      {latestMonthly && (() => {
+        const isNew = !latestMonthly.seen_at;
+        const accent = isNew ? '#6D4CAD' : '#b0a89c';
+        return (
+          <View style={{ paddingHorizontal: 24 }}>
             <Pressable
-              onPress={handleSearch}
-              disabled={loading}
+              onPress={() => router.push(`/monthly-digest/${latestMonthly.id}`)}
               style={{
-                backgroundColor: query.trim() ? '#E85D2C' : '#e7e5e4',
-                borderRadius: 10, padding: 8,
+                backgroundColor: isNew ? '#F3EDFC' : '#ffffff',
+                borderRadius: 18,
+                marginBottom: 20,
+                paddingHorizontal: 20,
+                paddingTop: 16,
+                paddingBottom: 18,
+                borderWidth: isNew ? 1.5 : 0,
+                borderColor: '#D6C6EE',
+                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 2 }, shadowOpacity: isNew ? 0.1 : 0.05, shadowRadius: 8, elevation: 3,
               }}>
-              {loading
-                ? <ActivityIndicator color="white" size="small" />
-                : <Feather name="arrow-right" size={16} color="white" />}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 14 }}>🌙</Text>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', color: accent }}>
+                    Monthly Reflection · {formatMonth(latestMonthly.month_start)}
+                  </Text>
+                </View>
+                {isNew && (
+                  <View style={{ backgroundColor: '#6D4CAD', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.6, color: '#ffffff' }}>NEW</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={{ fontSize: 16, fontFamily: 'Inter_400Regular', color: isNew ? '#292524' : '#78716c', lineHeight: 25, marginBottom: 12 }} numberOfLines={4}>
+                {latestMonthly.content}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_500Medium', color: accent }}>Read full reflection</Text>
+                <Feather name="arrow-right" size={11} color={accent} />
+              </View>
             </Pressable>
           </View>
-        </View>
+        );
+      })()}
 
-        {themes.length > 0 && (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
+      {/* Weekly reflections — small scattered note cards */}
+      {weeklyDigests.length > 0 && (
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{
+            fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.4, textTransform: 'uppercase',
+            color: '#c4b9b0', paddingHorizontal: 24, marginBottom: 12,
+          }}>
+            Weekly reflections
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 6, gap: 14 }}
+            style={{ flexGrow: 0 }}>
+            {weeklyDigests.map((w, i) => {
+              const cardStyle = WEEKLY_CARD_STYLES[i % WEEKLY_CARD_STYLES.length];
+              const isNew = !w.seen_at;
+              return (
+                <Pressable
+                  key={w.id}
+                  onPress={() => router.push(`/digest/${w.id}`)}
+                  style={{
+                    width: 118, minHeight: 96, backgroundColor: cardStyle.bg, borderRadius: 14,
+                    padding: 12, transform: [{ rotate: cardStyle.rotate }],
+                    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
+                  }}>
+                  {isNew && (
+                    <View style={{
+                      position: 'absolute', top: 8, right: 8, width: 7, height: 7, borderRadius: 4,
+                      backgroundColor: cardStyle.accent,
+                    }} />
+                  )}
+                  <Text style={{ fontSize: 16, marginBottom: 8 }}>🌿</Text>
+                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 11, color: cardStyle.accent, lineHeight: 15 }}>
+                    {formatWeek(w.week_start)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {themes.length > 0 && (
+        <View style={{ paddingHorizontal: 24, marginBottom: 4 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {themes.map(theme => (
               <Pressable
                 key={theme.id}
@@ -230,116 +280,127 @@ export default function SearchScreen() {
               </Pressable>
             ))}
           </View>
-        )}
-      </View>
-
-      {/* Divider — everything below is the searches section */}
-      <View style={{ height: 1, backgroundColor: '#ede8e0', marginHorizontal: 24, marginBottom: 16 }} />
-
-      {error ? (
-        <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
         </View>
-      ) : null}
+      )}
 
-      {/* Lower section: activity feed by default, results once a search runs */}
-      {!searched ? (
-        feed.length === 0 ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-            <Text style={{ fontSize: 32, marginBottom: 10 }}>🕓</Text>
-            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#a8a29e', textAlign: 'center' }}>
-              Your searches, chats, and insights will show up here.
-            </Text>
-          </View>
-        ) : (
-          <>
-            <Text style={{
-              fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.4, textTransform: 'uppercase',
-              color: '#c4b9b0', paddingHorizontal: 24, marginBottom: 8,
-            }}>
-              Recent activity
-            </Text>
-            <FlatList
-              data={feed}
-              keyExtractor={item => `${item.type}-${item.id}`}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 130 }}
-              renderItem={({ item }) => {
-                const { icon, label } =
-                  item.type === 'search'
-                    ? { icon: 'clock' as const, label: item.query }
-                    : item.type === 'chat'
-                    ? { icon: 'message-circle' as const, label: preview(item.preview) || 'Chat about an entry' }
-                    : item.type === 'insight'
-                    ? { icon: 'bar-chart-2' as const, label: `${item.themeName} insights` }
-                    : { icon: 'feather' as const, label: 'Weekly reflection' };
+      {/* Divider — everything below is the activity feed */}
+      <View style={{ height: 1, backgroundColor: '#ede8e0', marginHorizontal: 24, marginTop: 16, marginBottom: 16 }} />
 
-                function handlePress() {
-                  if (item.type === 'search') rerunFromHistory(item.query);
-                  else if (item.type === 'chat') router.push(`/chat/${item.entryId}`);
-                  else if (item.type === 'insight') router.push(`/theme-insight/${item.id}`);
-                  else router.push(`/digest/${item.id}`);
-                }
-
-                return (
-                  <Pressable
-                    onPress={handlePress}
-                    style={({ pressed }) => ({
-                      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                      backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
-                      borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 8,
-                      shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-                    })}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                      <Feather name={icon} size={14} color="#c4b9b0" />
-                      <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#292524', flex: 1 }} numberOfLines={1}>
-                        {label}
-                      </Text>
-                    </View>
-                    <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: '#c4b9b0' }}>
-                      {formatRelative(item.created_at)}
-                    </Text>
-                  </Pressable>
-                );
-              }}
-            />
-          </>
-        )
-      ) : results.length === 0 && !loading ? (
+      {feed.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-          <Text style={{ fontSize: 40, marginBottom: 12 }}>🌾</Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', textAlign: 'center' }}>
-            Nothing found. Try searching with different words.
+          <Text style={{ fontSize: 32, marginBottom: 10 }}>🕓</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#a8a29e', textAlign: 'center' }}>
+            Your searches, chats, and insights will show up here.
           </Text>
         </View>
       ) : (
-        <FlatList
-          data={results}
-          keyExtractor={item => item.id}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 130 }}
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() => router.push(`/entry/${item.id}`)}
-              style={({ pressed }) => ({
-                backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
-                borderRadius: 18, padding: 18, marginBottom: 10,
-                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
-              })}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#b07d4a' }}>
-                  {formatDate(item.created_at)}
-                </Text>
-                <View style={{ backgroundColor: '#FDE6DB', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 11, color: '#E85D2C' }}>
-                    {Math.round(item.similarity * 100)}% match
+        <>
+          <Text style={{
+            fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.4, textTransform: 'uppercase',
+            color: '#c4b9b0', paddingHorizontal: 24, marginBottom: 12,
+          }}>
+            Recent activity
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
+            style={{ marginBottom: 14, flexGrow: 0 }}>
+            {FILTERS.map(f => {
+              const active = filter === f.key;
+              return (
+                <Pressable
+                  key={`${f.key}-${active}`}
+                  onPress={() => setFilter(f.key)}
+                  style={{
+                    backgroundColor: active ? '#1c1917' : '#ffffff',
+                    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9,
+                    alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                    borderWidth: 1, borderColor: active ? '#1c1917' : '#ede8e0',
+                  }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      fontFamily: 'Inter_600SemiBold', fontSize: 12.5, lineHeight: 16,
+                      includeFontPadding: false,
+                      color: active ? '#ffffff' : '#78716c',
+                    }}>
+                    {f.label}
                   </Text>
-                </View>
-              </View>
-              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#292524', lineHeight: 24 }}>
-                {preview(item.content)}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {filteredFeed.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingTop: 40, paddingHorizontal: 40 }}>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#a8a29e', textAlign: 'center' }}>
+                Nothing here yet for this filter.
               </Text>
-            </Pressable>
+            </View>
+          ) : (
+          <FlatList
+            data={filteredFeed}
+            keyExtractor={item => `${item.type}-${item.id}`}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 130 }}
+            ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+            renderItem={({ item }) => {
+              const style = FEED_STYLES[item.type];
+              const label =
+                item.type === 'search' ? item.query
+                  : item.type === 'chat' ? (preview(item.preview) || 'Chat about an entry')
+                  : `${item.themeName} insights`;
+
+              function handlePress() {
+                if (item.type === 'search') router.push(`/search-overlay?query=${encodeURIComponent(item.query)}`);
+                else if (item.type === 'chat') router.push(`/chat/${item.entryId}`);
+                else router.push(`/theme-insight/${item.id}`);
+              }
+
+              return (
+                <Pressable
+                  onPress={handlePress}
+                  style={({ pressed }) => ({
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
+                    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14,
+                    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+                  })}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                    <View style={{
+                      width: 36, height: 36, borderRadius: 12, backgroundColor: style.chipBg,
+                      alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Feather name={style.icon} size={16} color={style.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{
+                        fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase',
+                        color: style.color, marginBottom: 3,
+                      }}>
+                        {style.tag}
+                      </Text>
+                      <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#292524' }} numberOfLines={1}>
+                        {label}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text
+                    style={{
+                      fontFamily: 'Inter_400Regular', fontSize: 11, color: '#c4b9b0', marginLeft: 8,
+                      flexShrink: 0, minWidth: 52, textAlign: 'right',
+                    }}
+                    numberOfLines={1}>
+                    {formatRelative(item.created_at)}
+                  </Text>
+                </Pressable>
+              );
+            }}
+          />
           )}
-        />
+        </>
       )}
     </WarmBackground>
   );

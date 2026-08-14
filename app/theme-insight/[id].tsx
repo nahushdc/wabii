@@ -9,12 +9,18 @@ type Insight = {
   id: string;
   content: string;
   theme_id: string;
+  insight_type: 'theme' | 'pattern';
   created_at: string;
 };
 
+const KIND_META = {
+  theme: { icon: 'aperture' as const, label: 'Theme', tagline: 'What it seems to be about' },
+  pattern: { icon: 'bar-chart-2' as const, label: 'Pattern', tagline: 'When and how it recurs' },
+};
+
 export default function ThemeInsightScreen() {
-  const { id, themeId, themeName: pendingThemeName, count, needed } = useLocalSearchParams<{
-    id: string; themeId?: string; themeName?: string; count?: string; needed?: string;
+  const { id, themeId, themeName: pendingThemeName, kind: pendingKind, count, needed } = useLocalSearchParams<{
+    id: string; themeId?: string; themeName?: string; kind?: 'theme' | 'pattern'; count?: string; needed?: string;
   }>();
   const isPending = id === 'pending';
   const [insight, setInsight] = useState<Insight | null>(null);
@@ -41,6 +47,48 @@ export default function ThemeInsightScreen() {
   }, [id]);
 
   if (isPending) {
+    const kind = pendingKind === 'theme' ? 'theme' : 'pattern';
+
+    if (kind === 'theme') {
+      return (
+        <WarmBackground>
+          <View style={{ paddingHorizontal: 24, paddingTop: 64 }}>
+            <Pressable onPress={() => router.back()} style={{ padding: 4, alignSelf: 'flex-start' }}>
+              <Feather name="arrow-left" size={22} color="#374151" />
+            </Pressable>
+          </View>
+
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36 }}>
+            <View style={{
+              width: 88, height: 88, borderRadius: 44, backgroundColor: '#FDE6DB',
+              alignItems: 'center', justifyContent: 'center', marginBottom: 24,
+            }}>
+              <Text style={{ fontSize: 40 }}>🔍</Text>
+            </View>
+
+            <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
+              Nothing to find yet
+            </Text>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#78716c', textAlign: 'center', lineHeight: 23, marginBottom: 28 }}>
+              A Theme insight can come from just one entry anywhere in your journal — write your first one and I'll find what "{pendingThemeName}" is really about.
+            </Text>
+
+            {themeId && (
+              <Pressable
+                onPress={() => router.push(`/(tabs)/new-entry?themeId=${themeId}`)}
+                style={{
+                  backgroundColor: '#E85D2C', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 28,
+                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                }}>
+                <Feather name="edit-3" size={15} color="#ffffff" />
+                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#ffffff' }}>Write an entry</Text>
+              </Pressable>
+            )}
+          </View>
+        </WarmBackground>
+      );
+    }
+
     const have = parseInt(count ?? '0', 10);
     const need = parseInt(needed ?? '3', 10);
     const remaining = Math.max(0, need - have);
@@ -66,8 +114,8 @@ export default function ThemeInsightScreen() {
           </Text>
           <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#78716c', textAlign: 'center', lineHeight: 23, marginBottom: 28 }}>
             {remaining > 0
-              ? `Write ${remaining} more ${remaining === 1 ? 'entry' : 'entries'} under "${pendingThemeName}" and I'll start noticing the patterns for you.`
-              : `Almost there — a little more writing under "${pendingThemeName}" and your insights will be ready.`}
+              ? `Log ${remaining} more ${remaining === 1 ? 'occurrence' : 'occurrences'} under "${pendingThemeName}" and I'll start noticing the pattern for you.`
+              : `Almost there — a little more logged under "${pendingThemeName}" and your pattern will be ready.`}
           </Text>
 
           {/* Progress dots */}
@@ -84,7 +132,7 @@ export default function ThemeInsightScreen() {
               ))}
             </View>
             <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#a8a29e' }}>
-              {have} of {need} entries
+              {have} of {need} occurrences
             </Text>
           </View>
 
@@ -96,7 +144,7 @@ export default function ThemeInsightScreen() {
                 flexDirection: 'row', alignItems: 'center', gap: 8,
               }}>
               <Feather name="edit-3" size={15} color="#ffffff" />
-              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#ffffff' }}>Write an entry</Text>
+              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#ffffff' }}>Log an occurrence</Text>
             </Pressable>
           )}
         </View>
@@ -120,6 +168,8 @@ export default function ThemeInsightScreen() {
     );
   }
 
+  const meta = KIND_META[insight.insight_type] ?? KIND_META.pattern;
+
   return (
     <WarmBackground>
       {/* Header */}
@@ -128,9 +178,9 @@ export default function ThemeInsightScreen() {
           <Feather name="arrow-left" size={22} color="#374151" />
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <Feather name="bar-chart-2" size={16} color="#b07d4a" />
+          <Feather name={meta.icon} size={16} color="#b07d4a" />
           <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.4, textTransform: 'uppercase', color: '#b07d4a' }}>
-            Theme Insights
+            {meta.label} · {meta.tagline}
           </Text>
         </View>
         <Text style={{ fontSize: 24, fontFamily: 'Inter_700Bold', color: '#1c1917', marginTop: 4 }}>

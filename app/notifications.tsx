@@ -33,9 +33,13 @@ function formatDays(days: number[]) {
   return sorted.map(d => DAY_ABBR[d]).join(', ');
 }
 
+const PROACTIVE_REMINDERS_FEATURE = 'proactive_reminders';
+
 export default function NotificationsScreen() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notifyRequested, setNotifyRequested] = useState(false);
+  const [notifyLoading, setNotifyLoading] = useState(false);
 
   async function fetchReminders() {
     const { data } = await supabase
@@ -46,12 +50,35 @@ export default function NotificationsScreen() {
     setReminders(data ?? []);
   }
 
+  async function fetchNotifyRequested() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from('feature_interest')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('feature', PROACTIVE_REMINDERS_FEATURE)
+      .maybeSingle();
+    setNotifyRequested(!!data);
+  }
+
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      fetchReminders().finally(() => setLoading(false));
+      Promise.all([fetchReminders(), fetchNotifyRequested()]).finally(() => setLoading(false));
     }, [])
   );
+
+  async function handleNotifyMe() {
+    if (notifyRequested || notifyLoading) return;
+    setNotifyLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.from('feature_interest').insert({ user_id: user.id, feature: PROACTIVE_REMINDERS_FEATURE });
+      setNotifyRequested(true);
+    }
+    setNotifyLoading(false);
+  }
 
   async function toggleEnabled(reminder: Reminder, value: boolean) {
     setReminders(prev => prev.map(r => (r.id === reminder.id ? { ...r, enabled: value } : r)));
@@ -94,6 +121,49 @@ export default function NotificationsScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 24 }}>
+        <View style={{
+          backgroundColor: '#2A2530', borderRadius: 18, padding: 20, marginBottom: 20,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 5,
+              backgroundColor: 'rgba(232, 93, 44, 0.2)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
+            }}>
+              <Feather name="phone-call" size={11} color="#F5A889" />
+              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: '#F5A889' }}>
+                Pro · Coming soon
+              </Text>
+            </View>
+          </View>
+          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 17, color: '#ffffff', marginBottom: 8, lineHeight: 23 }}>
+            Proactive reminders are coming soon
+          </Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13.5, color: '#c9c2ce', lineHeight: 20, marginBottom: 16 }}>
+            Instead of a silent push notification, we'll nudge you on iMessage — or have a voice bot actually
+            call you — to keep you accountable to writing. Building the habit of thought-dumping matters more
+            than any single entry.
+          </Text>
+          <Pressable
+            onPress={handleNotifyMe}
+            disabled={notifyLoading}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+              backgroundColor: notifyRequested ? 'rgba(255,255,255,0.1)' : '#E85D2C',
+              borderRadius: 12, paddingVertical: 12,
+            }}>
+            {notifyLoading ? (
+              <ActivityIndicator color="white" size="small" />
+            ) : (
+              <>
+                <Feather name={notifyRequested ? 'check' : 'bell'} size={15} color="#ffffff" />
+                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#ffffff' }}>
+                  {notifyRequested ? "You're on the list" : 'Notify me'}
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+
         {reminders.length === 0 ? (
           <View style={{ alignItems: 'center', paddingTop: 60, paddingHorizontal: 20 }}>
             <Text style={{ fontSize: 40, marginBottom: 12 }}>🔔</Text>
