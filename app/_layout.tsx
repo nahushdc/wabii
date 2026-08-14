@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Slot, useRouter, useSegments, useRootNavigationState } from 'expo-router';
+import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import '../global.css';
@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { registerForPushNotifications } from '@/lib/notifications';
 import { Platform } from 'react-native';
 import { WarmBackground } from '@/components/warm-background';
+import { LaunchScreen } from '@/components/launch-screen';
 import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
 import {
@@ -20,7 +21,7 @@ import {
 } from '@expo-google-fonts/inter';
 
 const PUBLIC_ROUTES = ['log-in', 'sign-up', 'forgot-password', 'reset-password'];
-const PRIVATE_ROUTES = ['profile', 'entry', 'digest', 'notifications', 'export', 'therapist-invite', 'chat', 'reminder', 'onboarding', 'prompt-themes', 'prompt-theme', 'theme-insight'];
+const PRIVATE_ROUTES = ['profile', 'entry', 'digest', 'monthly-digest', 'notifications', 'export', 'therapist-invite', 'chat', 'reminder', 'onboarding', 'prompt-themes', 'prompt-theme', 'theme-insight', 'search-overlay', 'search-onboarding', 'pursuits-onboarding', 'reflection-settings', 'help'];
 
 const OnboardingContext = createContext<(complete: boolean) => void>(() => {});
 export function useSetOnboardingComplete() {
@@ -92,6 +93,7 @@ function NotificationDeepLinkHandler() {
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | undefined>(undefined);
+  const [showLaunch, setShowLaunch] = useState(true);
   const router = useRouter();
   const navigationState = useRootNavigationState();
 
@@ -143,8 +145,14 @@ export default function RootLayout() {
       <OnboardingContext.Provider value={setOnboardingComplete}>
         <AuthGuard session={session} onboardingComplete={onboardingComplete} />
         <NotificationDeepLinkHandler />
-        <Slot />
+        <Stack screenOptions={{ headerShown: false }} />
         <StatusBar style="dark" />
+        {showLaunch && (
+          <LaunchScreen
+            ready={session !== undefined}
+            onFinished={() => setShowLaunch(false)}
+          />
+        )}
       </OnboardingContext.Provider>
     </ThemeProvider>
   );

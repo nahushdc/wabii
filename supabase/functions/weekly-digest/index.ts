@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     weekStart.setDate(weekStart.getDate() - 7);
     weekStart.setHours(0, 0, 0, 0);
 
-    let usersQuery = supabase.from('users').select('id, email');
+    let usersQuery = supabase.from('users').select('id, email, weekly_reflections_enabled');
     if (targetUserId) usersQuery = usersQuery.eq('id', targetUserId);
     const { data: users, error: usersError } = await usersQuery;
     if (usersError) throw usersError;
@@ -80,6 +80,11 @@ Deno.serve(async (req) => {
     const results = [];
 
     for (const user of users ?? []) {
+      if (user.weekly_reflections_enabled === false) {
+        results.push({ user_id: user.id, status: 'skipped — weekly reflections disabled' });
+        continue;
+      }
+
       // Fetch this week's entries for the reflection
       const { data: weekEntries, error: weekError } = await supabase
         .from('journal_entries')
@@ -93,11 +98,14 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Fetch ALL entry dates to calculate streak
-      const { data: allEntries } = await supabase
-        .from('journal_entries')
-        .select('created_at')
-        .eq('user_id', user.id);
+      // Fetch ALL entry dates to calculate streak, and this week's entries'
+      // pursuit tags so we can call out patterns/themes per pursuit below.
+      const [{ data: allEntries }, { data: weekEntriesWithTheme }, { data: pursuits }] = await Promise.all([
+        supabase.from('journal_entries').select('created_at').eq('user_id', user.id),
+        supabase.from('journal_entries').select('content, created_at, prompt_theme_id')
+          .eq('user_id', user.id).gte('created_at', weekStart.toISOString()).not('prompt_theme_id', 'is', null),
+        supabase.from('prompt_themes').select('id, name, focus').eq('user_id', user.id).eq('status', 'active'),
+      ]);
 
       const allDates = (allEntries ?? []).map(e => e.created_at);
       const streak = calculateStreak(allDates);
@@ -115,9 +123,35 @@ Deno.serve(async (req) => {
         ? `\nAbout their journaling habit this week: ${streakNote} Acknowledge this naturally — not as a trophy or a metric, but as a quiet sign of commitment to themselves. Weave it in organically, not as a separate section.\n`
         : '';
 
+      // Build a per-pursuit breakdown so the digest can call out patterns and
+      // themes specific to each pursuit, grounded only in what was actually
+      // logged against it this week.
+      let pursuitsPromptSection = '';
+      if (pursuits && pursuits.length > 0) {
+        const byTheme: Record<string, typeof weekEntriesWithTheme> = {};
+        for (const e of weekEntriesWithTheme ?? []) {
+          const key = e.prompt_theme_id as string;
+          (byTheme[key] ??= []).push(e);
+        }
+        const pursuitBlocks = pursuits.map(p => {
+          const entries = byTheme[p.id] ?? [];
+          if (entries.length === 0) {
+            return `Pursuit: "${p.name}"${p.focus ? ` (focus: ${p.focus})` : ''}\nNo entries logged against this pursuit this week.`;
+          }
+          const text = entries.map((e: any, i: number) =>
+            `Entry ${i + 1} (${new Date(e.created_at).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}):\n${e.content}`
+          ).join('\n\n');
+          return `Pursuit: "${p.name}"${p.focus ? ` (focus: ${p.focus})` : ''}\n${text}`;
+        }).join('\n\n---\n\n');
+
+        pursuitsPromptSection = `\n\nThe person is also tracking these ongoing "pursuits" — standing personal questions they're deliberately exploring. Below, for each pursuit, is what (if anything) they logged against it this week specifically. After your main reflection, add a section titled exactly "Your pursuits this week" and, for each pursuit listed below, write one short line naming a genuine theme (what it seems to be about) or pattern (when/how it recurs) you can detect — grounded strictly in that pursuit's entries below, not the rest of the week. If a pursuit has no entries this week, or too little to say anything real, say so plainly (e.g. "Nothing logged this week — no pattern to report.") rather than inventing one.
+
+${pursuitBlocks}`;
+      }
+
       const message = await anthropic.messages.create({
         model: 'claude-sonnet-4-5',
-        max_tokens: 1024,
+        max_tokens: 1400,
         messages: [
           {
             role: 'user',
@@ -129,7 +163,7 @@ Your digest should:
 - Be honest but kind — this is for the person's own reflection, not an evaluation
 - Feel like it was written by someone who actually read every word, not a summary bot
 - Be 3–4 paragraphs. No bullet points. No headers. Just thoughtful prose.
-${streakPromptSection}
+${streakPromptSection}${pursuitsPromptSection}
 Journal entries:
 ${entriesText}`,
           },

@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
     if (!therapistEmail) return json({ error: 'therapist_email required' }, 400);
 
     const token = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
     const passwordHash = password ? await hashPassword(password) : null;
 
     const { data: link, error: insertError } = await supabase

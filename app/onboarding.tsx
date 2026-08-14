@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  ZoomIn, FadeInDown, FadeInUp,
+  useSharedValue, useAnimatedStyle, withSequence, withTiming, withDelay,
+} from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { registerForPushNotifications } from '@/lib/notifications';
@@ -12,9 +17,9 @@ import { useSetOnboardingComplete } from './_layout';
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 const VALUE_PROPS = [
-  { icon: 'book-open', title: 'Journal', description: 'Write freely, anytime.', chipBg: COLORS.primaryLight },
-  { icon: 'message-circle', title: 'Reflect with AI', description: 'Get insights on what you write.', chipBg: COLORS.primaryDark },
-  { icon: 'zap', title: 'A more self-aware you', description: 'The result of showing up.', chipBg: '#9A3412' },
+  { title: 'Get it out', description: 'Type it, talk it, or say it out loud.', chipBg: COLORS.primaryLight, haloBg: '#FBE3D3' },
+  { title: 'Reflect with AI', description: 'Get insights on what you write.', chipBg: COLORS.primaryDark, haloBg: '#F4C7AC' },
+  { title: 'A more self-aware you', description: 'The result of showing up.', chipBg: '#9A3412', haloBg: '#E9C2AA' },
 ] as const;
 
 const INITIAL_REMINDERS = [
@@ -22,6 +27,31 @@ const INITIAL_REMINDERS = [
   { icon: 'sun', hour: 13, minute: 0, label: 'Midday pause', message: 'Take a moment to pause 🌿' },
   { icon: 'moon', hour: 21, minute: 0, label: 'Evening check-in', message: 'How was your day? 🌙' },
 ];
+
+function WelcomeCTA({ onPress, label }: { onPress: () => void; label: string }) {
+  // A single gentle settle after it arrives — not a repeating pulse, which
+  // read as anxious/blinking rather than inviting.
+  const scale = useSharedValue(0.97);
+
+  useEffect(() => {
+    scale.value = withDelay(950, withSequence(withTiming(1.02, { duration: 260 }), withTiming(1, { duration: 220 })));
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  return (
+    <Animated.View entering={FadeInUp.delay(950).springify()} style={animatedStyle}>
+      <Pressable
+        onPress={onPress}
+        style={{
+          width: '100%', backgroundColor: COLORS.primary, borderRadius: 16, paddingVertical: 16, alignItems: 'center',
+          shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 4,
+        }}>
+        <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>{label}</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
 
 function timeToDate(hour: number, minute: number): Date {
   const d = new Date();
@@ -38,6 +68,7 @@ export default function OnboardingScreen() {
   const isValueStep = !step;
   const isNameStep = step === 'name';
   const [loading, setLoading] = useState(false);
+  const [finishingAction, setFinishingAction] = useState<'enable' | 'skip' | null>(null);
   const [name, setName] = useState('');
   const [reminders, setReminders] = useState(() => INITIAL_REMINDERS.map(r => ({ ...r })));
   const [selectedReminders, setSelectedReminders] = useState<Set<number>>(new Set([0, 1, 2]));
@@ -67,8 +98,9 @@ export default function OnboardingScreen() {
     setReminders(prev => prev.map((r, i) => (i === index ? { ...r, hour: time.getHours(), minute: time.getMinutes() } : r)));
   }
 
-  async function finish(withReminders: boolean, withPermission: boolean) {
+  async function finish(withReminders: boolean, withPermission: boolean, action: 'enable' | 'skip') {
     setLoading(true);
+    setFinishingAction(action);
 
     const save = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -103,6 +135,7 @@ export default function OnboardingScreen() {
       console.log('Onboarding finish error:', e);
     } finally {
       setLoading(false);
+      setFinishingAction(null);
       setOnboardingComplete(true);
       router.replace('/(tabs)');
     }
@@ -111,41 +144,56 @@ export default function OnboardingScreen() {
   if (isValueStep) {
     return (
       <WarmBackground>
+        {/* Soft ambient glow — sets a calmer, safer tone than a flat background */}
+        <LinearGradient
+          colors={['rgba(232,93,44,0.16)', 'rgba(232,93,44,0)']}
+          style={{ position: 'absolute', top: -100, left: -80, width: 280, height: 280, borderRadius: 140 }}
+        />
+        <LinearGradient
+          colors={['rgba(154,52,18,0.10)', 'rgba(154,52,18,0)']}
+          style={{ position: 'absolute', bottom: -60, right: -100, width: 260, height: 260, borderRadius: 130 }}
+        />
+
         <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 32 }}>
-          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 34, color: COLORS.primary, textAlign: 'center', marginBottom: 24 }}>
-            Wabii
-          </Text>
-          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 27, color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
-            Get to know yourself
-          </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#8a7a6f', textAlign: 'center', lineHeight: 23, marginBottom: 32 }}>
-            Wabii helps you build real self-awareness, one small habit at a time.
-          </Text>
+          <Animated.Text
+            entering={FadeInDown.delay(150).duration(450).springify()}
+            style={{ fontFamily: 'Inter_700Bold', fontSize: 27, color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
+            A place to think out loud
+          </Animated.Text>
+          <Animated.Text
+            entering={FadeInDown.delay(280).duration(450).springify()}
+            style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#8a7a6f', textAlign: 'center', lineHeight: 23, marginBottom: 32 }}>
+            Vent, rant, ramble, or reflect — however it comes out.
+          </Animated.Text>
 
           <View style={{ marginBottom: 20 }}>
-            {VALUE_PROPS.map(v => (
-              <View key={v.title} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14, marginBottom: 20 }}>
-                <View style={{
-                  width: 42, height: 42, borderRadius: 21, backgroundColor: v.chipBg,
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Feather name={v.icon} size={19} color="#ffffff" />
-                </View>
+            {VALUE_PROPS.map((v, i) => (
+              <Animated.View
+                key={v.title}
+                entering={FadeInDown.delay(450 + i * 150).duration(450).springify()}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: i < VALUE_PROPS.length - 1 ? 24 : 0 }}>
+                <Animated.View
+                  entering={ZoomIn.delay(550 + i * 150).duration(400).springify()}
+                  style={{
+                    width: 46, height: 46, borderRadius: 23, backgroundColor: v.haloBg,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                  <View style={{
+                    width: 32, height: 32, borderRadius: 16, backgroundColor: v.chipBg,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 14, color: '#ffffff' }}>{i + 1}</Text>
+                  </View>
+                </Animated.View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>{v.title}</Text>
                   <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e', lineHeight: 19 }}>{v.description}</Text>
                 </View>
-              </View>
+              </Animated.View>
             ))}
           </View>
 
-          <Pressable
-            onPress={() => router.push('/onboarding?step=name')}
-            style={{
-              width: '100%', backgroundColor: COLORS.primary, borderRadius: 16, paddingVertical: 16, alignItems: 'center',
-            }}>
-            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Get started</Text>
-          </Pressable>
+          <WelcomeCTA onPress={() => router.push('/onboarding?step=name')} label="Come on in" />
         </View>
       </WarmBackground>
     );
@@ -278,15 +326,20 @@ export default function OnboardingScreen() {
         </View>
 
         <Pressable
-          onPress={() => finish(true, true)}
+          onPress={() => finish(true, true, 'enable')}
           disabled={loading}
-          style={{ backgroundColor: COLORS.primary, borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 14, width: '100%' }}>
-          {loading
+          style={{ backgroundColor: COLORS.primary, borderRadius: 16, paddingVertical: 16, alignItems: 'center', width: '100%' }}>
+          {finishingAction === 'enable'
             ? <ActivityIndicator color="white" />
             : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Enable notifications</Text>}
         </Pressable>
-        <Pressable onPress={() => finish(false, false)} disabled={loading}>
-          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#a8a29e' }}>Not now</Text>
+        <Pressable
+          onPress={() => finish(false, false, 'skip')}
+          disabled={loading}
+          style={{ paddingVertical: 14, paddingHorizontal: 24 }}>
+          {finishingAction === 'skip'
+            ? <ActivityIndicator size="small" color="#a8a29e" />
+            : <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#a8a29e' }}>Not now</Text>}
         </Pressable>
       </View>
     </WarmBackground>

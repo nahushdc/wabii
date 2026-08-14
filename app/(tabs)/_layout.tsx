@@ -44,6 +44,7 @@ function TabButton({
 export default function TabLayout() {
   const pathname = usePathname();
   const onSearch = pathname.startsWith('/search');
+  const onProfile = pathname.startsWith('/profile');
 
   return (
     <View style={{ flex: 1 }}>
@@ -55,6 +56,7 @@ export default function TabLayout() {
         <Tabs.Screen name="index" />
         <Tabs.Screen name="new-entry" options={{ href: null }} />
         <Tabs.Screen name="search" />
+        <Tabs.Screen name="profile" />
       </Tabs>
 
       <View
@@ -76,22 +78,22 @@ export default function TabLayout() {
           elevation: 8,
         }}>
         <TabButton
-          active={!onSearch}
+          active={!onSearch && !onProfile}
           icon="book.fill"
           label="Journal"
           onPress={() => router.push('/(tabs)')}
         />
         <TabButton
           active={onSearch}
-          icon="magnifyingglass"
+          icon="sparkles"
           label="Reflect"
           onPress={() => router.push('/(tabs)/search')}
         />
         <TabButton
-          active={false}
+          active={onProfile}
           icon="person.crop.circle"
           label="Profile"
-          onPress={() => router.push('/profile')}
+          onPress={() => router.push('/(tabs)/profile')}
         />
       </View>
 

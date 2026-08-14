@@ -1,30 +1,419 @@
-import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Keyboard, LayoutAnimation, UIManager } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { useAudioRecorder, useAudioRecorderState, useAudioPlayer, useAudioPlayerStatus, RecordingPresets, AudioModule, setAudioModeAsync } from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
+import { COLORS } from '@/constants/colors';
+
+type Mode = 'text' | 'voice';
 
 function getTodayLabel() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
+function formatDuration(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// ---------- Text mode ----------
+
+function TextComposer({
+  content, setContent, tags, setTags,
+  activeThemeId, setActiveThemeId, nightThemeId, prompts, promptIndex, setPromptIndex,
+}: {
+  content: string; setContent: (v: string) => void;
+  tags: SelectedTag[]; setTags: (v: SelectedTag[]) => void;
+  activeThemeId: string | null; setActiveThemeId: (v: string | null) => void;
+  nightThemeId: string | null; prompts: string[]; promptIndex: number; setPromptIndex: (fn: (i: number) => number) => void;
+}) {
+  const wordCount = content.trim() === '' ? 0 : content.trim().split(/\s+/).length;
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+      {/* Prompt mode */}
+      {activeThemeId && prompts.length > 0 ? (
+        <View style={{
+          marginHorizontal: 24, marginTop: 12, backgroundColor: '#FDE6DB', borderRadius: 16,
+          paddingHorizontal: 18, paddingTop: 14, paddingBottom: 14,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Feather name="edit-3" size={13} color={COLORS.primary} />
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', color: COLORS.primary }}>
+                Prompt
+              </Text>
+            </View>
+            <Pressable onPress={() => setActiveThemeId(null)} hitSlop={8}>
+              <Feather name="x" size={16} color={COLORS.primaryDark} />
+            </Pressable>
+          </View>
+          <Text style={{ fontSize: 16, fontFamily: 'Inter_500Medium', color: '#292524', lineHeight: 24, marginBottom: 10 }}>
+            {prompts[promptIndex]}
+          </Text>
+          {prompts.length > 1 && (
+            <Pressable
+              onPress={() => setPromptIndex(i => (i + 1) % prompts.length)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' }}>
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: COLORS.primary }}>Next prompt</Text>
+              <Feather name="arrow-right" size={12} color={COLORS.primary} />
+            </Pressable>
+          )}
+        </View>
+      ) : (
+        !activeThemeId && nightThemeId && (
+          <Pressable
+            onPress={() => setActiveThemeId(nightThemeId)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+              marginHorizontal: 24, marginTop: 12,
+              backgroundColor: '#f0ebe3', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+            }}>
+            <Feather name="edit-3" size={13} color="#78716c" />
+            <Text style={{ fontSize: 12, fontFamily: 'Inter_500Medium', color: '#78716c' }}>Use a prompt</Text>
+          </Pressable>
+        )
+      )}
+
+      {/* Writing area */}
+      <TextInput
+        style={{
+          paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16,
+          fontSize: 18, fontFamily: 'Inter_400Regular',
+          color: '#1c1917', lineHeight: 30,
+          minHeight: 280, textAlignVertical: 'top',
+        }}
+        placeholder="What's on your mind today?"
+        placeholderTextColor="#c4b9b0"
+        value={content}
+        onChangeText={setContent}
+        multiline
+        autoFocus
+      />
+
+      <TagPicker selected={tags} onChange={setTags} />
+
+      <View style={{ paddingHorizontal: 24, paddingBottom: 16, paddingTop: 8 }}>
+        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#c4b9b0' }}>
+          {wordCount} {wordCount === 1 ? 'word' : 'words'}
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+// ---------- Voice mode ----------
+
+function VoiceComposer({ transcript, setTranscript }: { transcript: string; setTranscript: (v: string) => void }) {
+  const [recordedUri, setRecordedUri] = useState<string | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(audioRecorder, 200);
+  const player = useAudioPlayer(recordedUri ?? undefined);
+  const playerStatus = useAudioPlayerStatus(player);
+  const [transcribing, setTranscribing] = useState(false);
+  const [error, setError] = useState('');
+
+  async function startRecording() {
+    setError('');
+    try {
+      const { granted } = await AudioModule.requestRecordingPermissionsAsync();
+      if (!granted) { setError('Microphone access is needed to record.'); return; }
+      // The audio session doesn't allow recording by default — without this,
+      // record() silently captures nothing.
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      setRecordedUri(null);
+      setTranscript('');
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not start recording.');
+    }
+  }
+
+  async function stopRecording() {
+    try {
+      await audioRecorder.stop();
+      await setAudioModeAsync({ allowsRecording: false });
+      const uri = audioRecorder.uri;
+      if (!uri) {
+        setError('No audio was captured. Try recording again.');
+        return;
+      }
+      // record() doesn't surface native start-up failures, so an empty file
+      // is the clearest sign the recorder never actually captured audio.
+      const info = await FileSystem.getInfoAsync(uri);
+      if (!info.exists || info.size === 0) {
+        setError('The recording came out empty — no audio was captured. Try again.');
+        return;
+      }
+      setRecordedUri(uri);
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not finish that recording.');
+    }
+  }
+
+  async function handleTranscribe() {
+    if (!recordedUri) {
+      setError('There is no recording to transcribe yet.');
+      return;
+    }
+    setError('');
+    setTranscribing(true);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const form = new FormData();
+    form.append('audio', {
+      uri: recordedUri,
+      name: 'recording.m4a',
+      type: 'audio/m4a',
+    } as any);
+
+    try {
+      const res = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/transcribe-voice`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+        body: form,
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? 'Transcription failed.');
+      setTranscript(result.text ?? '');
+    } catch (e: any) {
+      setError(e.message ?? 'Could not transcribe that recording.');
+    }
+    setTranscribing(false);
+  }
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 24 }}>
+      <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+        <Pressable
+          onPress={recorderState.isRecording ? stopRecording : startRecording}
+          style={{
+            width: 96, height: 96, borderRadius: 48,
+            backgroundColor: recorderState.isRecording ? '#ef4444' : COLORS.primary,
+            alignItems: 'center', justifyContent: 'center',
+            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 6,
+          }}>
+          <Feather name={recorderState.isRecording ? 'square' : 'mic'} size={34} color="#ffffff" />
+        </Pressable>
+        <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 18, color: '#1c1917', marginTop: 16 }}>
+          {recorderState.isRecording ? formatDuration(recorderState.durationMillis) : recordedUri ? 'Recording ready' : 'Tap to record'}
+        </Text>
+        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e', marginTop: 4, textAlign: 'center' }}>
+          {recorderState.isRecording
+            ? 'Speak freely — tap the square to stop.'
+            : recordedUri
+            ? 'Play it back, re-record, or transcribe it into your entry.'
+            : 'Record your thoughts out loud.'}
+        </Text>
+      </View>
+
+      {recordedUri && !recorderState.isRecording && (
+        <View style={{ gap: 10, marginBottom: 20 }}>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <Pressable
+              onPress={() => {
+                if (playerStatus.isLoaded && playerStatus.duration === 0) {
+                  setError('This recording has no audio in it, so it can\'t be played back.');
+                  return;
+                }
+                player.playing ? player.pause() : player.play();
+              }}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
+                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+              }}>
+              <Feather name={player.playing ? 'pause' : 'play'} size={16} color="#1c1917" />
+              <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>
+                {player.playing ? 'Pause' : 'Play'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={startRecording}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
+                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+              }}>
+              <Feather name="rotate-ccw" size={16} color="#1c1917" />
+              <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>Re-record</Text>
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={handleTranscribe}
+            disabled={transcribing}
+            style={{
+              backgroundColor: transcribing ? '#e7e5e4' : COLORS.primary,
+              borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+              flexDirection: 'row', justifyContent: 'center', gap: 8,
+            }}>
+            {transcribing
+              ? <ActivityIndicator color="white" size="small" />
+              : <>
+                  <Feather name="type" size={16} color="white" />
+                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#ffffff' }}>Transcribe into entry</Text>
+                </>}
+          </Pressable>
+        </View>
+      )}
+
+      {error ? (
+        <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 16 }}>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
+        </View>
+      ) : null}
+
+      {transcript ? (
+        <View style={{ marginBottom: 24 }}>
+          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 8 }}>
+            Transcript
+          </Text>
+          <TextInput
+            style={{
+              backgroundColor: '#ffffff', borderRadius: 16, padding: 16,
+              fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24,
+              minHeight: 120, textAlignVertical: 'top',
+              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+            }}
+            value={transcript}
+            onChangeText={setTranscript}
+            multiline
+          />
+        </View>
+      ) : null}
+    </ScrollView>
+  );
+}
+
+// ---------- Mode switcher ----------
+
+function ModeSwitcher({ mode, setMode }: { mode: Mode; setMode: (m: Mode) => void }) {
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const options: { id: Mode; label: string; icon: keyof typeof Feather.glyphMap }[] = [
+    { id: 'text', label: 'Text', icon: 'edit-3' },
+    { id: 'voice', label: 'Voice', icon: 'mic' },
+  ];
+
+  useEffect(() => {
+    // "Will" events fire alongside the keyboard's own slide animation and carry
+    // its real duration/easing on iOS, so animating our layout off that event
+    // (instead of "Did", which fires after the keyboard has already settled)
+    // keeps our margin change in sync with the keyboard instead of jumping.
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const animateTo = (visible: boolean, duration?: number) => {
+      LayoutAnimation.configureNext(
+        LayoutAnimation.create(duration || 250, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)
+      );
+      setKeyboardVisible(visible);
+    };
+
+    const showSub = Keyboard.addListener(showEvent, e => animateTo(true, e.duration));
+    const hideSub = Keyboard.addListener(hideEvent, e => animateTo(false, e.duration));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      marginHorizontal: 24, marginTop: 8,
+      // Idle (no keyboard), the floating tab bar + FAB sit under this — give
+      // them clearance. Once the keyboard is up, that chrome is out of the
+      // way, so hug the keyboard instead of leaving a dead gap above it.
+      marginBottom: keyboardVisible ? 12 : 110,
+    }}>
+      <View style={{
+        flex: 1, flexDirection: 'row',
+        backgroundColor: '#ffffff', borderRadius: 18, padding: 6,
+        shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+      }}>
+        {options.map(opt => {
+          const active = mode === opt.id;
+          return (
+            <Pressable
+              key={opt.id}
+              onPress={() => setMode(opt.id)}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                backgroundColor: active ? COLORS.primary : 'transparent',
+                borderRadius: 13, paddingVertical: 10,
+              }}>
+              <Feather name={opt.icon} size={14} color={active ? '#ffffff' : '#a8a29e'} />
+              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: active ? '#ffffff' : '#a8a29e' }}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {keyboardVisible && (
+        <Pressable
+          onPress={() => Keyboard.dismiss()}
+          hitSlop={10}
+          style={{
+            width: 44, height: 44, borderRadius: 22, backgroundColor: '#ffffff',
+            alignItems: 'center', justifyContent: 'center',
+            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+          }}>
+          <Feather name="chevron-down" size={20} color="#78716c" />
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+// ---------- Screen ----------
+
 export default function NewEntryScreen() {
-  const { themeId: deepLinkThemeId } = useLocalSearchParams<{ themeId?: string }>();
-  const [content, setContent] = useState('');
-  const [tags, setTags] = useState<SelectedTag[]>([]);
+  const { themeId: deepLinkThemeId, seed } = useLocalSearchParams<{ themeId?: string; seed?: string }>();
+  const [mode, setMode] = useState<Mode>('text');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Text mode state
+  const [content, setContent] = useState(seed ? `${seed}\n\n` : '');
+  const [tags, setTags] = useState<SelectedTag[]>([]);
   const [nightThemeId, setNightThemeId] = useState<string | null>(null);
   const [activeThemeId, setActiveThemeId] = useState<string | null>(deepLinkThemeId ?? null);
   const [prompts, setPrompts] = useState<string[]>([]);
   const [promptIndex, setPromptIndex] = useState(0);
 
-  const wordCount = content.trim() === '' ? 0 : content.trim().split(/\s+/).length;
+  // Voice mode state
+  const [transcript, setTranscript] = useState('');
 
-  // Whichever reminder has a theme linked powers the generic "Use a prompt" button
+  // This screen lives inside the (tabs) navigator, which keeps tab screens
+  // mounted across visits instead of unmounting them — so without this, the
+  // previous entry's text/tags/transcript would still be sitting here the
+  // next time this tab is opened. Reset on every focus instead.
+  useFocusEffect(
+    useCallback(() => {
+      setMode('text');
+      setError('');
+      setContent(seed ? `${seed}\n\n` : '');
+      setTags([]);
+      setActiveThemeId(deepLinkThemeId ?? null);
+      setPromptIndex(0);
+      setTranscript('');
+    }, [seed, deepLinkThemeId])
+  );
+
   useEffect(() => {
     supabase
       .from('reminders')
@@ -49,22 +438,28 @@ export default function NewEntryScreen() {
       });
   }, [activeThemeId]);
 
+  function getSaveContent(): string {
+    if (mode === 'text') return content.trim();
+    return transcript.trim();
+  }
+
   async function handleSave() {
     setError('');
-    if (!content.trim()) { setError('Write something before saving.'); return; }
+    const finalContent = getSaveContent();
+    if (!finalContent) { setError('Add something before saving.'); return; }
     setLoading(true);
 
     const { data: { user } } = await supabase.auth.getUser();
 
     const { data: entry, error: entryErr } = await supabase
       .from('journal_entries')
-      .insert({ user_id: user!.id, content: content.trim(), prompt_theme_id: activeThemeId })
+      .insert({ user_id: user!.id, content: finalContent, prompt_theme_id: mode === 'text' ? activeThemeId : null })
       .select('id')
       .single();
 
     if (entryErr || !entry) { setError(entryErr?.message ?? 'Failed to save.'); setLoading(false); return; }
 
-    if (tags.length > 0) {
+    if (mode === 'text' && tags.length > 0) {
       for (const tag of tags) {
         const { data: tagRow, error: tagErr } = await supabase
           .from('tags')
@@ -77,131 +472,65 @@ export default function NewEntryScreen() {
     }
 
     supabase.functions.invoke('embed-entry', {
-      body: { entry_id: entry.id, content: content.trim() },
+      body: { entry_id: entry.id, content: finalContent },
     });
 
     setLoading(false);
-    setContent('');
-    setTags([]);
-    setActiveThemeId(null);
     router.replace('/(tabs)');
   }
+
+  const hasContent = getSaveContent().length > 0;
 
   return (
     <WarmBackground>
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ flexGrow: 1 }}
-        keyboardShouldPersistTaps="handled">
 
-        {/* Header */}
-        <View style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          paddingHorizontal: 24, paddingTop: 64, paddingBottom: 16,
-        }}>
-          <Pressable onPress={() => router.replace('/(tabs)')} style={{ padding: 4 }}>
-            <Feather name="arrow-left" size={22} color="#78716c" />
-          </Pressable>
-          <Pressable
-            onPress={handleSave}
-            disabled={loading}
-            style={{
-              backgroundColor: content.trim() ? '#E85D2C' : '#e7e5e4',
-              borderRadius: 20, paddingHorizontal: 20, paddingVertical: 8,
-            }}>
-            {loading
-              ? <ActivityIndicator color="white" size="small" />
-              : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: content.trim() ? '#ffffff' : '#a8a29e' }}>Save</Text>}
-          </Pressable>
-        </View>
-
-        {/* Date */}
-        <View style={{ paddingHorizontal: 24, paddingBottom: 4 }}>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e' }}>
-            {getTodayLabel()}
-          </Text>
-        </View>
-
-        {error ? (
-          <View style={{ marginHorizontal: 24, marginTop: 8, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
-            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
-          </View>
-        ) : null}
-
-        {/* Prompt mode */}
-        {activeThemeId && prompts.length > 0 ? (
-          <View style={{
-            marginHorizontal: 24, marginTop: 12, backgroundColor: '#FDE6DB', borderRadius: 16,
-            paddingHorizontal: 18, paddingTop: 14, paddingBottom: 14,
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Feather name="edit-3" size={13} color="#E85D2C" />
-                <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', color: '#E85D2C' }}>
-                  Prompt
-                </Text>
-              </View>
-              <Pressable onPress={() => setActiveThemeId(null)} hitSlop={8}>
-                <Feather name="x" size={16} color="#C2410C" />
-              </Pressable>
-            </View>
-            <Text style={{ fontSize: 16, fontFamily: 'Inter_500Medium', color: '#292524', lineHeight: 24, marginBottom: 10 }}>
-              {prompts[promptIndex]}
-            </Text>
-            {prompts.length > 1 && (
-              <Pressable
-                onPress={() => setPromptIndex(i => (i + 1) % prompts.length)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' }}>
-                <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: '#E85D2C' }}>Next prompt</Text>
-                <Feather name="arrow-right" size={12} color="#E85D2C" />
-              </Pressable>
-            )}
-          </View>
-        ) : (
-          !activeThemeId && nightThemeId && (
-            <Pressable
-              onPress={() => setActiveThemeId(nightThemeId)}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
-                marginHorizontal: 24, marginTop: 12,
-                backgroundColor: '#f0ebe3', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
-              }}>
-              <Feather name="edit-3" size={13} color="#78716c" />
-              <Text style={{ fontSize: 12, fontFamily: 'Inter_500Medium', color: '#78716c' }}>Use a prompt</Text>
-            </Pressable>
-          )
-        )}
-
-        {/* Writing area */}
-        <TextInput
+      {/* Header */}
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingHorizontal: 24, paddingTop: 64, paddingBottom: 12,
+      }}>
+        <Pressable onPress={() => router.replace('/(tabs)')} style={{ padding: 4 }}>
+          <Feather name="arrow-left" size={22} color="#78716c" />
+        </Pressable>
+        <Pressable
+          onPress={handleSave}
+          disabled={loading || !hasContent}
           style={{
-            paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16,
-            fontSize: 18, fontFamily: 'Inter_400Regular',
-            color: '#1c1917', lineHeight: 30,
-            minHeight: 340, textAlignVertical: 'top',
-          }}
-          placeholder="What's on your mind today?"
-          placeholderTextColor="#c4b9b0"
-          value={content}
-          onChangeText={setContent}
-          multiline
-          autoFocus
-        />
+            backgroundColor: hasContent ? COLORS.primary : '#e7e5e4',
+            borderRadius: 20, paddingHorizontal: 20, paddingVertical: 8,
+          }}>
+          {loading
+            ? <ActivityIndicator color="white" size="small" />
+            : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: hasContent ? '#ffffff' : '#a8a29e' }}>Save</Text>}
+        </Pressable>
+      </View>
 
-        {/* Tags */}
-        <TagPicker selected={tags} onChange={setTags} />
+      <View style={{ paddingHorizontal: 24, paddingBottom: 4 }}>
+        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e' }}>
+          {getTodayLabel()}
+        </Text>
+      </View>
 
-        {/* Word count */}
-        <View style={{ paddingHorizontal: 24, paddingBottom: 32, paddingTop: 8 }}>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#c4b9b0' }}>
-            {wordCount} {wordCount === 1 ? 'word' : 'words'}
-          </Text>
+      {error ? (
+        <View style={{ marginHorizontal: 24, marginTop: 8, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
         </View>
+      ) : null}
 
-      </ScrollView>
+      {mode === 'text' && (
+        <TextComposer
+          content={content} setContent={setContent}
+          tags={tags} setTags={setTags}
+          activeThemeId={activeThemeId} setActiveThemeId={setActiveThemeId}
+          nightThemeId={nightThemeId} prompts={prompts} promptIndex={promptIndex} setPromptIndex={setPromptIndex}
+        />
+      )}
+      {mode === 'voice' && <VoiceComposer transcript={transcript} setTranscript={setTranscript} />}
+
+      <ModeSwitcher mode={mode} setMode={setMode} />
     </KeyboardAvoidingView>
     </WarmBackground>
   );

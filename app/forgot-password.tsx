@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { WarmBackground } from '@/components/warm-background';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -23,35 +24,50 @@ export default function ForgotPasswordScreen() {
 
   if (sent) {
     return (
-      <View className="flex-1 bg-white justify-center px-8">
-        <Text className="text-2xl font-bold text-gray-900 mb-3">Check your email</Text>
-        <Text className="text-gray-500 mb-8">
-          We sent a password reset link to <Text className="font-medium text-gray-700">{email}</Text>. Check your inbox and tap the link.
-        </Text>
-        <Pressable className="items-center py-2" onPress={() => router.replace('/log-in')}>
-          <Text className="text-indigo-600 font-medium">Back to log in</Text>
-        </Pressable>
-      </View>
+      <WarmBackground>
+        <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 28 }}>
+          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', marginBottom: 10 }}>
+            Check your email
+          </Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#78716c', lineHeight: 22, marginBottom: 32 }}>
+            We sent a password reset link to{' '}
+            <Text style={{ fontFamily: 'Inter_600SemiBold', color: '#1c1917' }}>{email}</Text>. Check your inbox and tap the link.
+          </Text>
+          <Pressable style={{ alignItems: 'center', paddingVertical: 8 }} onPress={() => router.replace('/log-in')}>
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#E85D2C' }}>Back to log in</Text>
+          </Pressable>
+        </View>
+      </WarmBackground>
     );
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View className="flex-1 justify-center px-8">
-        <Text className="text-2xl font-bold text-gray-900 mb-2">Forgot password?</Text>
-        <Text className="text-gray-500 mb-10">Enter your email and we'll send you a reset link.</Text>
+    <WarmBackground>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 48 }} keyboardShouldPersistTaps="handled">
+
+        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', marginBottom: 8 }}>
+          Forgot password?
+        </Text>
+        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', marginBottom: 32, lineHeight: 22 }}>
+          Enter your email and we'll send you a reset link.
+        </Text>
 
         {error ? (
-          <View className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
-            <Text className="text-red-600 text-sm">{error}</Text>
+          <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#ef4444' }}>{error}</Text>
           </View>
         ) : null}
 
-        <Text className="text-sm font-medium text-gray-700 mb-1">Email</Text>
+        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#78716c', marginBottom: 6 }}>Email</Text>
         <TextInput
-          className="border border-gray-200 rounded-xl px-4 py-3 text-base text-gray-900 mb-6"
+          style={{
+            backgroundColor: '#ffffff', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+            fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', marginBottom: 24,
+            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+          }}
           placeholder="you@example.com"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor="#c4b9b0"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
@@ -59,18 +75,20 @@ export default function ForgotPasswordScreen() {
         />
 
         <Pressable
-          className="bg-indigo-600 rounded-xl py-4 items-center mb-4"
           onPress={handleReset}
-          disabled={loading}>
+          disabled={loading}
+          style={{ backgroundColor: '#E85D2C', borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginBottom: 12 }}>
           {loading
             ? <ActivityIndicator color="white" />
-            : <Text className="text-white font-semibold text-base">Send reset link</Text>}
+            : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Send reset link</Text>}
         </Pressable>
 
-        <Pressable className="items-center py-2" onPress={() => router.back()}>
-          <Text className="text-gray-500">Back to log in</Text>
+        <Pressable style={{ alignItems: 'center', paddingVertical: 8 }} onPress={() => router.back()}>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#a8a29e' }}>Back to log in</Text>
         </Pressable>
-      </View>
+
+      </ScrollView>
     </KeyboardAvoidingView>
+    </WarmBackground>
   );
 }

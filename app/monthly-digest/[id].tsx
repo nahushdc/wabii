@@ -5,26 +5,23 @@ import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 
-type Digest = {
+type MonthlyDigest = {
   id: string;
   content: string;
-  week_start: string;
+  month_start: string;
   rating: 'up' | 'down' | null;
   seen_at: string | null;
   feedback_comment: string | null;
 };
 
-function formatWeek(dateStr: string) {
-  const date = new Date(dateStr);
-  const end = new Date(date);
-  end.setDate(date.getDate() + 6);
-  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-  return `${fmt(date)} – ${fmt(end)}`;
+function formatMonth(dateStr: string) {
+  const date = new Date(`${dateStr}T00:00:00`);
+  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
-export default function DigestScreen() {
+export default function MonthlyDigestScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [digest, setDigest] = useState<Digest | null>(null);
+  const [digest, setDigest] = useState<MonthlyDigest | null>(null);
   const [loading, setLoading] = useState(true);
   const [rating, setRating] = useState<'up' | 'down' | null>(null);
   const [ratingLoading, setRatingLoading] = useState(false);
@@ -35,20 +32,20 @@ export default function DigestScreen() {
   useEffect(() => {
     async function fetchDigest() {
       const { data, error } = await supabase
-        .from('weekly_digests')
+        .from('monthly_digests')
         .select('*')
         .eq('id', id)
         .single();
-      if (error) console.log('Digest fetch error:', error.message);
+      if (error) console.log('Monthly digest fetch error:', error.message);
       if (data) {
         setDigest(data);
         setRating(data.rating ?? null);
         if (!data.seen_at) {
           const { error: seenErr } = await supabase
-            .from('weekly_digests')
+            .from('monthly_digests')
             .update({ seen_at: new Date().toISOString() })
             .eq('id', id);
-          if (seenErr) console.warn('Failed to mark digest seen:', seenErr.message);
+          if (seenErr) console.warn('Failed to mark monthly digest seen:', seenErr.message);
         }
       }
       setLoading(false);
@@ -61,7 +58,7 @@ export default function DigestScreen() {
     setRating(newRating);
     setRatingLoading(true);
     await supabase
-      .from('weekly_digests')
+      .from('monthly_digests')
       .update({ rating: newRating })
       .eq('id', id);
     setRatingLoading(false);
@@ -76,17 +73,17 @@ export default function DigestScreen() {
   async function handleSendFeedback() {
     if (!feedbackComment.trim()) return;
     const { error } = await supabase
-      .from('weekly_digests')
+      .from('monthly_digests')
       .update({ feedback_comment: feedbackComment.trim() })
       .eq('id', id);
-    if (error) { console.warn('Failed to save digest feedback:', error.message); return; }
+    if (error) { console.warn('Failed to save monthly digest feedback:', error.message); return; }
     setFeedbackSent(true);
   }
 
   if (loading) {
     return (
       <WarmBackground style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#E85D2C" />
+        <ActivityIndicator color="#6D4CAD" />
       </WarmBackground>
     );
   }
@@ -107,10 +104,10 @@ export default function DigestScreen() {
           <Feather name="arrow-left" size={22} color="#374151" />
         </Pressable>
         <View className="flex-row items-center gap-2 mb-1">
-          <Text style={{ fontSize: 20 }}>🌿</Text>
-          <Text className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#b07d4a' }}>Your Weekly Journey</Text>
+          <Text style={{ fontSize: 20 }}>🌙</Text>
+          <Text className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#6D4CAD' }}>Your Monthly Reflection</Text>
         </View>
-        <Text className="text-2xl font-bold mt-1" style={{ color: '#1c1917' }}>{formatWeek(digest.week_start)}</Text>
+        <Text className="text-2xl font-bold mt-1" style={{ color: '#1c1917' }}>{formatMonth(digest.month_start)}</Text>
       </View>
 
       <ScrollView
@@ -169,7 +166,7 @@ export default function DigestScreen() {
             <TextInput
               value={feedbackComment}
               onChangeText={setFeedbackComment}
-              placeholder="e.g. didn't sound like me, missed what actually mattered this week…"
+              placeholder="e.g. didn't sound like me, missed what actually mattered this month…"
               placeholderTextColor="#c4b9b0"
               multiline
               style={{
@@ -188,7 +185,7 @@ export default function DigestScreen() {
                 disabled={!feedbackComment.trim()}
                 style={{
                   flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
-                  backgroundColor: feedbackComment.trim() ? '#E85D2C' : '#e7e2da',
+                  backgroundColor: feedbackComment.trim() ? '#6D4CAD' : '#e7e2da',
                 }}>
                 <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#ffffff' }}>Send</Text>
               </Pressable>

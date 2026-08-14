@@ -44,7 +44,7 @@ export default function ReminderScreen() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    supabase.from('prompt_themes').select('id, name').order('created_at', { ascending: false }).then(({ data }) => {
+    supabase.from('prompt_themes').select('id, name').eq('status', 'active').order('created_at', { ascending: false }).then(({ data }) => {
       setThemes(data ?? []);
     });
   }, []);
@@ -272,9 +272,9 @@ export default function ReminderScreen() {
           ))}
         </View>
 
-        {/* Prompt theme */}
+        {/* Pursuit */}
         <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 10 }}>
-          Prompt theme
+          Pursuit
         </Text>
         <Pressable
           onPress={() => setShowThemePicker(v => !v)}
