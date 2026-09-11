@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Keyboard, LayoutAnimation, UIManager } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -6,12 +6,37 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useAudioRecorder, useAudioRecorderState, useAudioPlayer, useAudioPlayerStatus, RecordingPresets, AudioModule, setAudioModeAsync } from 'expo-audio';
-import * as FileSystem from 'expo-file-system/legacy';
+import { useAudioPlayer, useAudioPlayerStatus, AudioModule } from 'expo-audio';
+import { useAudioRecorder as useLiveAudioRecorder } from '@siteed/audio-studio';
+import * as Localization from 'expo-localization';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
+
+// India gets Nova-3 multilingual (code-switches between English and Hindi
+// and a handful of other languages); everywhere else gets Nova-3 monolingual
+// English, which is more accurate when there's no code-switching to handle.
+function getSpeechLanguage(): 'multi' | 'en' {
+  const region = Localization.getLocales()[0]?.regionCode;
+  return region === 'IN' ? 'multi' : 'en';
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const clean = base64.replace(/[^A-Za-z0-9+/]/g, '');
+  const bytes: number[] = [];
+  for (let i = 0; i < clean.length; i += 4) {
+    const e1 = chars.indexOf(clean[i]);
+    const e2 = chars.indexOf(clean[i + 1]);
+    const e3 = clean[i + 2] !== undefined ? chars.indexOf(clean[i + 2]) : -1;
+    const e4 = clean[i + 3] !== undefined ? chars.indexOf(clean[i + 3]) : -1;
+    bytes.push((e1 << 2) | (e2 >> 4));
+    if (e3 >= 0) bytes.push(((e2 & 15) << 4) | (e3 >> 2));
+    if (e4 >= 0) bytes.push(((e3 & 3) << 6) | e4);
+  }
+  return new Uint8Array(bytes);
+}
 
 type Mode = 'text' | 'voice';
 
@@ -40,7 +65,7 @@ function TextComposer({
   const wordCount = content.trim() === '' ? 0 : content.trim().split(/\s+/).length;
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+    <View style={{ flex: 1 }}>
       {/* Prompt mode */}
       {activeThemeId && prompts.length > 0 ? (
         <View style={{
@@ -85,13 +110,20 @@ function TextComposer({
         )
       )}
 
-      {/* Writing area */}
+      {/* Writing area — a bounded, flex:1 multiline input handles its own
+          internal scrolling natively, which correctly responds to drag
+          gestures over the text and keeps the cursor in view while typing.
+          An unbounded auto-growing TextInput inside an outer ScrollView
+          can't be dragged to scroll once it fills the screen, since the
+          drag gesture is captured by the TextInput for cursor placement
+          instead of reaching the ScrollView. */}
       <TextInput
         style={{
+          flex: 1,
           paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16,
           fontSize: 18, fontFamily: 'Inter_400Regular',
           color: '#1c1917', lineHeight: 30,
-          minHeight: 280, textAlignVertical: 'top',
+          textAlignVertical: 'top',
         }}
         placeholder="What's on your mind today?"
         placeholderTextColor="#c4b9b0"
@@ -108,7 +140,7 @@ function TextComposer({
           {wordCount} {wordCount === 1 ? 'word' : 'words'}
         </Text>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -116,155 +148,154 @@ function TextComposer({
 
 function VoiceComposer({ transcript, setTranscript }: { transcript: string; setTranscript: (v: string) => void }) {
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const recorderState = useAudioRecorderState(audioRecorder, 200);
+  const { startRecording: startLiveRecording, stopRecording: stopLiveRecording, isRecording, durationMs } = useLiveAudioRecorder();
   const player = useAudioPlayer(recordedUri ?? undefined);
   const playerStatus = useAudioPlayerStatus(player);
-  const [transcribing, setTranscribing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [interimText, setInterimText] = useState('');
   const [error, setError] = useState('');
+  const socketRef = useRef<WebSocket | null>(null);
+  const finalTranscriptRef = useRef('');
 
   async function startRecording() {
     setError('');
+    setInterimText('');
     try {
       const { granted } = await AudioModule.requestRecordingPermissionsAsync();
       if (!granted) { setError('Microphone access is needed to record.'); return; }
-      // The audio session doesn't allow recording by default — without this,
-      // record() silently captures nothing.
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+
       setRecordedUri(null);
       setTranscript('');
-      await audioRecorder.prepareToRecordAsync();
-      audioRecorder.record();
+      finalTranscriptRef.current = '';
+      setConnecting(true);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const language = getSpeechLanguage();
+      const wsUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL!.replace(/^http/, 'ws')}/functions/v1/transcribe-voice-live?token=${encodeURIComponent(session?.access_token ?? '')}&language=${language}`;
+      const socket = new WebSocket(wsUrl);
+      socketRef.current = socket;
+
+      socket.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          const alt = msg?.channel?.alternatives?.[0];
+          const text = alt?.transcript ?? '';
+          if (!text) return;
+          if (msg.is_final) {
+            finalTranscriptRef.current = `${finalTranscriptRef.current} ${text}`.trim();
+            setTranscript(finalTranscriptRef.current);
+            setInterimText('');
+          } else {
+            setInterimText(text);
+          }
+        } catch {
+          // non-JSON / control frames — ignore
+        }
+      };
+      socket.onerror = () => setError('Live transcription connection had trouble — your recording is still being saved.');
+
+      await new Promise<void>((resolve, reject) => {
+        socket.onopen = () => resolve();
+        socket.onerror = () => reject(new Error('Could not connect for live transcription.'));
+        setTimeout(() => reject(new Error('Timed out connecting for live transcription.')), 8000);
+      });
+      setConnecting(false);
+
+      await startLiveRecording({
+        sampleRate: 16000,
+        channels: 1,
+        encoding: 'pcm_16bit',
+        interval: 250,
+        output: { primary: { enabled: true, format: 'wav' } },
+        onAudioStream: async (event) => {
+          if (typeof event.data !== 'string') return;
+          const bytes = base64ToBytes(event.data);
+          if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(bytes);
+        },
+      });
     } catch (e: any) {
+      setConnecting(false);
       setError(e?.message ?? 'Could not start recording.');
     }
   }
 
   async function stopRecording() {
     try {
-      await audioRecorder.stop();
-      await setAudioModeAsync({ allowsRecording: false });
-      const uri = audioRecorder.uri;
-      if (!uri) {
+      const result = await stopLiveRecording();
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ type: 'CloseStream' }));
+        socketRef.current.close();
+      }
+      socketRef.current = null;
+      setInterimText('');
+
+      if (!result?.fileUri) {
         setError('No audio was captured. Try recording again.');
         return;
       }
-      // record() doesn't surface native start-up failures, so an empty file
-      // is the clearest sign the recorder never actually captured audio.
-      const info = await FileSystem.getInfoAsync(uri);
-      if (!info.exists || info.size === 0) {
-        setError('The recording came out empty — no audio was captured. Try again.');
-        return;
-      }
-      setRecordedUri(uri);
+      setRecordedUri(result.fileUri);
     } catch (e: any) {
       setError(e?.message ?? 'Could not finish that recording.');
     }
-  }
-
-  async function handleTranscribe() {
-    if (!recordedUri) {
-      setError('There is no recording to transcribe yet.');
-      return;
-    }
-    setError('');
-    setTranscribing(true);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const form = new FormData();
-    form.append('audio', {
-      uri: recordedUri,
-      name: 'recording.m4a',
-      type: 'audio/m4a',
-    } as any);
-
-    try {
-      const res = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/transcribe-voice`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-        body: form,
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error ?? 'Transcription failed.');
-      setTranscript(result.text ?? '');
-    } catch (e: any) {
-      setError(e.message ?? 'Could not transcribe that recording.');
-    }
-    setTranscribing(false);
   }
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 24 }}>
       <View style={{ alignItems: 'center', paddingVertical: 20 }}>
         <Pressable
-          onPress={recorderState.isRecording ? stopRecording : startRecording}
+          onPress={isRecording ? stopRecording : startRecording}
+          disabled={connecting}
           style={{
             width: 96, height: 96, borderRadius: 48,
-            backgroundColor: recorderState.isRecording ? '#ef4444' : COLORS.primary,
+            backgroundColor: isRecording ? '#ef4444' : connecting ? '#e7e5e4' : COLORS.primary,
             alignItems: 'center', justifyContent: 'center',
             shadowColor: '#1c1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 6,
           }}>
-          <Feather name={recorderState.isRecording ? 'square' : 'mic'} size={34} color="#ffffff" />
+          {connecting
+            ? <ActivityIndicator color="#a8a29e" size="small" />
+            : <Feather name={isRecording ? 'square' : 'mic'} size={34} color="#ffffff" />}
         </Pressable>
         <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 18, color: '#1c1917', marginTop: 16 }}>
-          {recorderState.isRecording ? formatDuration(recorderState.durationMillis) : recordedUri ? 'Recording ready' : 'Tap to record'}
+          {connecting ? 'Connecting…' : isRecording ? formatDuration(durationMs) : recordedUri ? 'Recording ready' : 'Tap to record'}
         </Text>
         <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e', marginTop: 4, textAlign: 'center' }}>
-          {recorderState.isRecording
-            ? 'Speak freely — tap the square to stop.'
+          {isRecording
+            ? 'Speak freely — your words appear below as you talk.'
             : recordedUri
-            ? 'Play it back, re-record, or transcribe it into your entry.'
-            : 'Record your thoughts out loud.'}
+            ? 'Play it back, re-record, or edit the transcript below.'
+            : 'Record your thoughts out loud — transcribed live as you speak.'}
         </Text>
       </View>
 
-      {recordedUri && !recorderState.isRecording && (
-        <View style={{ gap: 10, marginBottom: 20 }}>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable
-              onPress={() => {
-                if (playerStatus.isLoaded && playerStatus.duration === 0) {
-                  setError('This recording has no audio in it, so it can\'t be played back.');
-                  return;
-                }
-                player.playing ? player.pause() : player.play();
-              }}
-              style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
-                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-              }}>
-              <Feather name={player.playing ? 'pause' : 'play'} size={16} color="#1c1917" />
-              <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>
-                {player.playing ? 'Pause' : 'Play'}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={startRecording}
-              style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
-                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-              }}>
-              <Feather name="rotate-ccw" size={16} color="#1c1917" />
-              <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>Re-record</Text>
-            </Pressable>
-          </View>
-
+      {recordedUri && !isRecording && (
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
           <Pressable
-            onPress={handleTranscribe}
-            disabled={transcribing}
+            onPress={() => {
+              if (playerStatus.isLoaded && playerStatus.duration === 0) {
+                setError('This recording has no audio in it, so it can\'t be played back.');
+                return;
+              }
+              player.playing ? player.pause() : player.play();
+            }}
             style={{
-              backgroundColor: transcribing ? '#e7e5e4' : COLORS.primary,
-              borderRadius: 14, paddingVertical: 14, alignItems: 'center',
-              flexDirection: 'row', justifyContent: 'center', gap: 8,
+              flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+              backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
+              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
             }}>
-            {transcribing
-              ? <ActivityIndicator color="white" size="small" />
-              : <>
-                  <Feather name="type" size={16} color="white" />
-                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#ffffff' }}>Transcribe into entry</Text>
-                </>}
+            <Feather name={player.playing ? 'pause' : 'play'} size={16} color="#1c1917" />
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>
+              {player.playing ? 'Pause' : 'Play'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={startRecording}
+            style={{
+              flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+              backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
+              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+            }}>
+            <Feather name="rotate-ccw" size={16} color="#1c1917" />
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>Re-record</Text>
           </Pressable>
         </View>
       )}
@@ -275,22 +306,32 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
         </View>
       ) : null}
 
-      {transcript ? (
+      {(transcript || interimText || isRecording) ? (
         <View style={{ marginBottom: 24 }}>
           <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 8 }}>
             Transcript
           </Text>
-          <TextInput
-            style={{
-              backgroundColor: '#ffffff', borderRadius: 16, padding: 16,
-              fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24,
-              minHeight: 120, textAlignVertical: 'top',
-              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-            }}
-            value={transcript}
-            onChangeText={setTranscript}
-            multiline
-          />
+          <View style={{
+            backgroundColor: '#ffffff', borderRadius: 16, padding: 16, minHeight: 120,
+            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+          }}>
+            {isRecording ? (
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24 }}>
+                {transcript}
+                {interimText ? <Text style={{ color: '#a8a29e' }}>{transcript ? ' ' : ''}{interimText}</Text> : null}
+              </Text>
+            ) : (
+              <TextInput
+                style={{
+                  fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24,
+                  textAlignVertical: 'top',
+                }}
+                value={transcript}
+                onChangeText={setTranscript}
+                multiline
+              />
+            )}
+          </View>
         </View>
       ) : null}
     </ScrollView>

@@ -205,8 +205,9 @@ export default function ProfileScreen() {
               Settings
             </Text>
             <MenuItem label="Reminders" icon="bell" onPress={() => router.push('/notifications')} />
+            <MenuItem label="App Lock" icon="lock" onPress={() => router.push('/app-lock')} />
             <MenuItem label="Reflection Settings" icon="feather" onPress={() => router.push('/reflection-settings')} />
-            <MenuItem label="Pursuits" subtitle="Formerly Self-Awareness Themes" icon="edit-3" onPress={handlePursuitsPress} />
+            <MenuItem label="Pursuits" icon="edit-3" onPress={handlePursuitsPress} />
             <MenuItem label="Share with coach" icon="share-2" onPress={() => router.push('/therapist-invite')} />
             <MenuItem label="Export & Import" icon="download" onPress={() => router.push('/export')} />
             <MenuItem label="Help" icon="help-circle" onPress={() => router.push('/help')} />

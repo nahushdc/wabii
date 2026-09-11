@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
-import { View, Text, Pressable, Switch, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { ReliableSwitch } from '@/components/reliable-switch';
 
 type Reminder = {
   id: string;
@@ -196,7 +197,7 @@ export default function NotificationsScreen() {
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Switch
+                <ReliableSwitch
                   value={reminder.enabled}
                   onValueChange={v => toggleEnabled(reminder, v)}
                   trackColor={{ false: '#e7e5e4', true: '#F5C7B0' }}

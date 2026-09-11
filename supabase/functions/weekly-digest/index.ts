@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     weekStart.setDate(weekStart.getDate() - 7);
     weekStart.setHours(0, 0, 0, 0);
 
-    let usersQuery = supabase.from('users').select('id, email, weekly_reflections_enabled');
+    let usersQuery = supabase.from('users').select('id, email, weekly_reflections_enabled, push_token');
     if (targetUserId) usersQuery = usersQuery.eq('id', targetUserId);
     const { data: users, error: usersError } = await usersQuery;
     if (usersError) throw usersError;
@@ -172,15 +172,32 @@ ${entriesText}`,
 
       const digestContent = message.content[0].type === 'text' ? message.content[0].text : '';
 
-      const { error: insertError } = await supabase
+      const { data: inserted, error: insertError } = await supabase
         .from('weekly_digests')
         .insert({
           user_id: user.id,
           content: digestContent,
           week_start: weekStart.toISOString().split('T')[0],
-        });
+        })
+        .select('id')
+        .single();
 
       if (insertError) throw insertError;
+
+      if (user.push_token) {
+        await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify([{
+            to: user.push_token,
+            title: 'Your weekly reflection is ready 🌿',
+            body: 'A look back at your week, and the pursuits you explored.',
+            sound: 'default',
+            data: { weekly_digest_id: inserted.id },
+          }]),
+        });
+      }
+
       results.push({ user_id: user.id, status: 'digest created', entries: weekEntries.length, streak });
     }
 

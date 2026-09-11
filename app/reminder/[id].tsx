@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, Switch, TextInput, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import { View, Text, Pressable, TextInput, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { ReliableSwitch } from '@/components/reliable-switch';
 
 function timeToDate(hour: number, minute: number): Date {
   const d = new Date();
@@ -228,7 +229,7 @@ export default function ReminderScreen() {
               No reminder on days you've already written an entry
             </Text>
           </View>
-          <Switch
+          <ReliableSwitch
             value={skipIfJournaled}
             onValueChange={setSkipIfJournaled}
             trackColor={{ false: '#e7e5e4', true: '#F5C7B0' }}

@@ -1,10 +1,40 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Alert, Keyboard } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
+
+function KeyboardDismissButton() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  if (!visible) return null;
+  return (
+    <View style={{ alignItems: 'flex-end', paddingHorizontal: 24, paddingBottom: 10 }}>
+      <Pressable
+        onPress={() => Keyboard.dismiss()}
+        hitSlop={10}
+        style={{
+          width: 40, height: 40, borderRadius: 20, backgroundColor: '#ffffff',
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+        }}>
+        <Feather name="chevron-down" size={20} color="#78716c" />
+      </Pressable>
+    </View>
+  );
+}
 
 type Entry = {
   id: string;
@@ -149,37 +179,54 @@ export default function EntryDetailScreen() {
         </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
-        {/* Date */}
-        <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
-          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#b07d4a' }}>
-            {formatDate(entry.created_at)}
-          </Text>
+      {editing ? (
+        <View style={{ flex: 1 }}>
+          <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#b07d4a' }}>
+              {formatDate(entry.created_at)}
+            </Text>
+          </View>
+
+          {error ? (
+            <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
+            </View>
+          ) : null}
+
+          {/* A bounded, flex:1 multiline input handles its own internal
+              scrolling natively — an unbounded auto-growing one inside a
+              ScrollView can't be dragged to scroll once it fills the screen. */}
+          <TextInput
+            style={{
+              flex: 1,
+              paddingHorizontal: 24, paddingVertical: 8,
+              fontSize: 18, fontFamily: 'Inter_400Regular',
+              color: '#1c1917', lineHeight: 30,
+              textAlignVertical: 'top',
+            }}
+            value={content}
+            onChangeText={setContent}
+            multiline
+            autoFocus
+          />
+          <TagPicker selected={editTags} onChange={setEditTags} />
+          <KeyboardDismissButton />
         </View>
-
-        {error ? (
-          <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
-            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
+      ) : (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
+          {/* Date */}
+          <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#b07d4a' }}>
+              {formatDate(entry.created_at)}
+            </Text>
           </View>
-        ) : null}
 
-        {editing ? (
-          <View>
-            <TextInput
-              style={{
-                paddingHorizontal: 24, paddingVertical: 8,
-                fontSize: 18, fontFamily: 'Inter_400Regular',
-                color: '#1c1917', lineHeight: 30,
-                minHeight: 300, textAlignVertical: 'top',
-              }}
-              value={content}
-              onChangeText={setContent}
-              multiline
-              autoFocus
-            />
-            <TagPicker selected={editTags} onChange={setEditTags} />
-          </View>
-        ) : (
+          {error ? (
+            <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
+            </View>
+          ) : null}
+
           <Text style={{
             paddingHorizontal: 24, paddingBottom: 24,
             fontSize: 18, fontFamily: 'Inter_400Regular',
@@ -187,21 +234,21 @@ export default function EntryDetailScreen() {
           }}>
             {entry.content}
           </Text>
-        )}
 
-        {/* Tags */}
-        {tags.length > 0 && (
-          <View style={{ paddingHorizontal: 24, paddingBottom: 40, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {tags.map(tag => (
-              <View
-                key={tag.id}
-                style={{ backgroundColor: '#f0ebe3', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 }}>
-                <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#78716c' }}>{tag.name}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </ScrollView>
+          {/* Tags */}
+          {tags.length > 0 && (
+            <View style={{ paddingHorizontal: 24, paddingBottom: 40, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {tags.map(tag => (
+                <View
+                  key={tag.id}
+                  style={{ backgroundColor: '#f0ebe3', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 }}>
+                  <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#78716c' }}>{tag.name}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      )}
     </KeyboardAvoidingView>
     </WarmBackground>
   );

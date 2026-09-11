@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
-import { View, Text, Pressable, Switch, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, ScrollView } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { ReliableSwitch } from '@/components/reliable-switch';
 
 export default function ReflectionSettingsScreen() {
   const [loading, setLoading] = useState(true);
@@ -95,7 +96,7 @@ export default function ReflectionSettingsScreen() {
               {weeklySaving
                 ? <ActivityIndicator size="small" color="#E85D2C" style={{ marginLeft: 10 }} />
                 : (
-                  <Switch
+                  <ReliableSwitch
                     value={weeklyEnabled}
                     onValueChange={toggleWeekly}
                     trackColor={{ false: '#e7e5e4', true: '#B7DDA8' }}
@@ -127,7 +128,7 @@ export default function ReflectionSettingsScreen() {
               {monthlySaving
                 ? <ActivityIndicator size="small" color="#E85D2C" style={{ marginLeft: 10 }} />
                 : (
-                  <Switch
+                  <ReliableSwitch
                     value={monthlyEnabled}
                     onValueChange={toggleMonthly}
                     trackColor={{ false: '#e7e5e4', true: '#D6C6EE' }}

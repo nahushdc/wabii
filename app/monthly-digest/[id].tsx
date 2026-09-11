@@ -19,6 +19,30 @@ function formatMonth(dateStr: string) {
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
+type ReflectionSection = { title: string | null; paragraphs: string[] };
+
+function parseReflectionSections(content: string): ReflectionSection[] {
+  const sections: ReflectionSection[] = [];
+  let current: ReflectionSection = { title: null, paragraphs: [] };
+
+  for (const block of content.split(/\n\s*\n/).map(value => value.trim()).filter(Boolean)) {
+    if (block.startsWith('## ')) {
+      if (current.title || current.paragraphs.length) sections.push(current);
+      current = { title: block.slice(3).trim(), paragraphs: [] };
+    } else {
+      current.paragraphs.push(block);
+    }
+  }
+  if (current.title || current.paragraphs.length) sections.push(current);
+  return sections;
+}
+
+function sectionStyle(title: string | null) {
+  if (title?.toLowerCase().includes('pattern')) return { icon: 'repeat' as const, color: '#6D4CAD', background: '#F3EDFC' };
+  if (title?.toLowerCase().includes('pursuit')) return { icon: 'compass' as const, color: '#C2410C', background: '#FDE6DB' };
+  return { icon: 'sun' as const, color: '#B07A37', background: '#FDF1D7' };
+}
+
 export default function MonthlyDigestScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [digest, setDigest] = useState<MonthlyDigest | null>(null);
@@ -96,32 +120,86 @@ export default function MonthlyDigestScreen() {
     );
   }
 
+  const sections = parseReflectionSections(digest.content);
+
   return (
     <WarmBackground>
       {/* Header */}
-      <View className="px-6 pt-16 pb-4">
-        <Pressable onPress={() => router.back()} className="p-1 mb-6" style={{ alignSelf: 'flex-start' }}>
+      <View style={{ paddingHorizontal: 24, paddingTop: 60, paddingBottom: 14 }}>
+        <Pressable onPress={() => router.back()} style={{ alignSelf: 'flex-start', padding: 5, marginBottom: 17 }}>
           <Feather name="arrow-left" size={22} color="#374151" />
         </Pressable>
-        <View className="flex-row items-center gap-2 mb-1">
-          <Text style={{ fontSize: 20 }}>🌙</Text>
-          <Text className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#6D4CAD' }}>Your Monthly Reflection</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 7 }}>
+          <View style={{ width: 35, height: 35, borderRadius: 18, backgroundColor: '#E5D8F5', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 18 }}>🌙</Text>
+          </View>
+          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1.3, textTransform: 'uppercase', color: '#6D4CAD' }}>
+            Your monthly reflection
+          </Text>
         </View>
-        <Text className="text-2xl font-bold mt-1" style={{ color: '#1c1917' }}>{formatMonth(digest.month_start)}</Text>
+        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 30, lineHeight: 37, color: '#1c1917' }}>{formatMonth(digest.month_start)}</Text>
+        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 21, color: '#78716c', marginTop: 7 }}>
+          A gentle look at what this month held for you.
+        </Text>
       </View>
 
       <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 48 }}>
-        <Text style={{ fontSize: 18, lineHeight: 32, color: '#292524', letterSpacing: 0.1 }}>
-          {digest.content}
-        </Text>
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 42 }}>
+        <View style={{ backgroundColor: '#FFFCF8', borderRadius: 24, paddingHorizontal: 20, paddingTop: 21, paddingBottom: 8, borderWidth: 1, borderColor: '#E8E0D7' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 19 }}>
+            <Feather name="coffee" size={14} color="#B07A37" />
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: '#8a7a6f' }}>
+              Take your time with this one
+            </Text>
+          </View>
+          {sections.map((section, sectionIndex) => {
+            const style = sectionStyle(section.title);
+            const isPatterns = section.title?.toLowerCase().includes('pattern');
+            return (
+              <View key={`${sectionIndex}-${section.title ?? 'reflection'}`}>
+                {sectionIndex > 0 && <View style={{ height: 1, backgroundColor: '#EEE7DE', marginBottom: 22 }} />}
+                {section.title && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 13 }}>
+                    <View style={{ width: 27, height: 27, borderRadius: 14, backgroundColor: style.background, alignItems: 'center', justifyContent: 'center' }}>
+                      <Feather name={style.icon} size={13} color={style.color} />
+                    </View>
+                    <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 12, color: style.color, letterSpacing: 0.2 }}>
+                      {section.title}
+                    </Text>
+                  </View>
+                )}
+                {section.paragraphs.map((paragraph, paragraphIndex) => {
+                  const isBullet = paragraph.startsWith('•') || paragraph.startsWith('- ');
+                  const body = isBullet ? paragraph.replace(/^[•-]\s*/, '') : paragraph;
+                  const leadParagraph = sectionIndex === 0 && paragraphIndex === 0;
+                  return (
+                    <View key={`${paragraphIndex}-${body.slice(0, 16)}`} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 11, paddingBottom: 22 }}>
+                      <View style={{ width: isBullet ? 8 : 7, height: isBullet ? 8 : 7, borderRadius: 4, marginTop: leadParagraph ? 10 : 8, backgroundColor: leadParagraph ? '#6D4CAD' : (isPatterns ? '#6D4CAD' : '#D9C8B6') }} />
+                      <Text style={{ flex: 1, fontFamily: leadParagraph ? 'Inter_500Medium' : 'Inter_400Regular', fontSize: leadParagraph ? 19 : 16.5, lineHeight: leadParagraph ? 29 : 27, color: '#292524', letterSpacing: 0.05 }}>
+                        {body}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })}
+          <View style={{ height: 1, backgroundColor: '#EEE7DE', marginBottom: 16 }} />
+          <View style={{ alignItems: 'center', paddingBottom: 12 }}>
+            <Text style={{ fontSize: 17 }}>✦</Text>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#8a7a6f', marginTop: 5 }}>
+              Keep what resonates. Leave the rest.
+            </Text>
+          </View>
+        </View>
       </ScrollView>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         {/* Rating */}
-        <View className="flex-row items-center justify-center gap-3 mx-6 mb-4">
-          <Text className="text-xs" style={{ color: '#a8a29e' }}>Was this helpful?</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginHorizontal: 24, marginBottom: 13 }}>
+          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#8a7a6f' }}>Did this feel true to your month?</Text>
           <Pressable
             onPress={() => handleRating('up')}
             disabled={ratingLoading}

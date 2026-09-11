@@ -120,7 +120,8 @@ export default function OnboardingScreen() {
         });
         await supabase.from('reminders').insert(rows);
       }
-      await supabase.from('users').upsert({ id: user.id, onboarding_complete: true });
+      const { error: upsertErr } = await supabase.from('users').upsert({ id: user.id, onboarding_complete: true });
+      if (upsertErr) console.warn('Failed to persist onboarding_complete:', upsertErr.message);
       // Push permission involves a native prompt the user may not respond to
       // right away — don't block finishing onboarding on it.
       if (withPermission) registerForPushNotifications(user.id);
