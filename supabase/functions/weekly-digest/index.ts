@@ -132,9 +132,12 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const targetUserId = body?.user_id ?? null;
+    // Manual/testing override to generate a digest for an arbitrary 7-day
+    // window instead of "the last 7 days" — only used when explicitly passed.
+    const weekStartOverride = typeof body?.week_start_override === 'string' ? body.week_start_override : null;
 
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - 7);
+    const weekStart = weekStartOverride ? new Date(`${weekStartOverride}T00:00:00.000Z`) : new Date();
+    if (!weekStartOverride) weekStart.setDate(weekStart.getDate() - 7);
     weekStart.setHours(0, 0, 0, 0);
 
     let usersQuery = supabase.from('users').select('id, email, weekly_reflections_enabled, push_token');
