@@ -27,7 +27,9 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
     "web": {
@@ -72,6 +74,12 @@
         "projectId": "a97badbf-0da8-4aa1-80d7-893d41f8d881"
       }
     },
-    "owner": "nahushdc"
+    "owner": "nahushdc",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a97badbf-0da8-4aa1-80d7-893d41f8d881"
+    }
   }
 }
