@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { DigestInsightsPanel, type DigestInsights } from '@/components/digest-insights';
+import { BoldText } from '@/components/bold-text';
 
 type MonthlyDigest = {
   id: string;
@@ -180,9 +181,10 @@ export default function MonthlyDigestScreen() {
                   return (
                     <View key={`${paragraphIndex}-${body.slice(0, 16)}`} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 11, paddingBottom: 22 }}>
                       <View style={{ width: isBullet ? 8 : 7, height: isBullet ? 8 : 7, borderRadius: 4, marginTop: leadParagraph ? 10 : 8, backgroundColor: leadParagraph ? '#6D4CAD' : (isPatterns ? '#6D4CAD' : '#D9C8B6') }} />
-                      <Text style={{ flex: 1, fontFamily: leadParagraph ? 'Inter_500Medium' : 'Inter_400Regular', fontSize: leadParagraph ? 19 : 16.5, lineHeight: leadParagraph ? 29 : 27, color: '#292524', letterSpacing: 0.05 }}>
-                        {body}
-                      </Text>
+                      <BoldText
+                        text={body}
+                        style={{ flex: 1, fontFamily: leadParagraph ? 'Inter_500Medium' : 'Inter_400Regular', fontSize: leadParagraph ? 19 : 16.5, lineHeight: leadParagraph ? 29 : 27, color: '#292524', letterSpacing: 0.05 }}
+                      />
                     </View>
                   );
                 })}

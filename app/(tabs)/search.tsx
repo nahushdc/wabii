@@ -9,11 +9,12 @@ import { COLORS } from '@/constants/colors';
 
 type ThemeOption = { id: string; name: string };
 
+type PatternEntry = { pattern: string; count: number };
 type DigestInsights = {
   moods: string[];
   new_patterns: string[];
-  repeating_patterns: string[];
-  attention_patterns: string[];
+  repeating_patterns: PatternEntry[];
+  attention_patterns: PatternEntry[];
 };
 
 type MonthlyDigest = { id: string; content: string; month_start: string; seen_at: string | null; insights: DigestInsights | null };

@@ -37,12 +37,25 @@ function calculateStreak(allDates: string[]): number {
   return streak;
 }
 
+type PatternEntry = { pattern: string; count: number };
 type DigestInsights = {
   moods: string[];
   new_patterns: string[];
-  repeating_patterns: string[];
-  attention_patterns: string[];
+  repeating_patterns: PatternEntry[];
+  attention_patterns: PatternEntry[];
 };
+
+function sanitizePatternEntries(value: unknown): PatternEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((p): p is { pattern: unknown; count: unknown } => p && typeof p === 'object')
+    .map(p => ({
+      pattern: String((p as any).pattern ?? '').trim(),
+      count: Math.max(2, Math.round(Number((p as any).count) || 2)),
+    }))
+    .filter(p => p.pattern.length > 0)
+    .slice(0, 8);
+}
 
 function parseInsightsJson(raw: string): DigestInsights | null {
   const cleaned = raw.replace(/```json\s*|```\s*/g, '').trim();
@@ -51,8 +64,8 @@ function parseInsightsJson(raw: string): DigestInsights | null {
     return {
       moods: Array.isArray(parsed.moods) ? parsed.moods.slice(0, 8) : [],
       new_patterns: Array.isArray(parsed.new_patterns) ? parsed.new_patterns.slice(0, 8) : [],
-      repeating_patterns: Array.isArray(parsed.repeating_patterns) ? parsed.repeating_patterns.slice(0, 8) : [],
-      attention_patterns: Array.isArray(parsed.attention_patterns) ? parsed.attention_patterns.slice(0, 8) : [],
+      repeating_patterns: sanitizePatternEntries(parsed.repeating_patterns),
+      attention_patterns: sanitizePatternEntries(parsed.attention_patterns),
     };
   } catch {
     return null;
@@ -64,13 +77,21 @@ async function generateInsights(
   previousInsights: DigestInsights | null,
   periodLabel: string,
 ): Promise<DigestInsights | null> {
-  const previousPatternsSection = previousInsights && (previousInsights.new_patterns.length || previousInsights.repeating_patterns.length)
-    ? `\n\nPatterns identified in the PREVIOUS ${periodLabel}, for comparison (use these to decide what's "new" vs "repeating" below — a pattern only counts as repeating if it genuinely also shows up in this period's entries, not just because it was mentioned before):\n${[...previousInsights.new_patterns, ...previousInsights.repeating_patterns].map(p => `- ${p}`).join('\n')}`
-    : '\n\nThere is no previous period to compare against — treat every genuine pattern you find as new.';
+  const knownPatterns: PatternEntry[] = previousInsights
+    ? [
+        ...previousInsights.new_patterns.map(pattern => ({ pattern, count: 1 })),
+        ...previousInsights.repeating_patterns,
+        ...previousInsights.attention_patterns.filter(a => !previousInsights.repeating_patterns.some(r => r.pattern === a.pattern)),
+      ]
+    : [];
+
+  const previousPatternsSection = knownPatterns.length
+    ? `\n\nPatterns identified in PREVIOUS periods, with how many consecutive periods (including that one) each has been observed so far — use this to decide "new" vs "repeating" below, and to set each repeating/attention pattern's count to (its previous count + 1) if it genuinely still shows up this period:\n${knownPatterns.map(p => `- "${p.pattern}" (seen ${p.count}x so far)`).join('\n')}`
+    : '\n\nThere is no previous period to compare against — treat every genuine pattern you find as new, with no counts to carry forward.';
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-5',
-    max_tokens: 700,
+    max_tokens: 900,
     messages: [
       {
         role: 'user',
@@ -79,16 +100,16 @@ async function generateInsights(
 {
   "moods": string[],
   "new_patterns": string[],
-  "repeating_patterns": string[],
-  "attention_patterns": string[]
+  "repeating_patterns": [{"pattern": string, "count": number}],
+  "attention_patterns": [{"pattern": string, "count": number}]
 }
 
 Rules:
 - "moods": 2-6 single words or short phrases naming the emotional tones actually present across these entries (e.g. "anxious", "hopeful", "overwhelmed"). Be specific and varied, not generic.
-- "new_patterns": short (under 12 words) descriptions of genuine behavioral/emotional/thought patterns that appear for the FIRST time this period.
-- "repeating_patterns": patterns that were also present in the previous period AND still show up here.
-- "attention_patterns": a SUBSET of repeating_patterns that seem stuck, avoided, or causing ongoing distress — worth gently flagging. Do not diagnose. Leave empty if nothing genuinely warrants it.
-- Every pattern must be grounded in the actual entries below — never invent one. If there's too little material, return shorter or empty arrays rather than padding them.
+- "new_patterns": short (under 12 words) descriptions of genuine behavioral/emotional/thought patterns that appear for the FIRST time this period. Plain strings, no count (a new pattern is implicitly 1x).
+- "repeating_patterns": patterns that were also present in a previous period AND still genuinely show up here. Each is {"pattern": short description, "count": previous count + 1}. Reuse the SAME wording as the previous pattern when it's the same pattern, so it can be matched — only rephrase if the pattern itself has evolved.
+- "attention_patterns": a SUBSET of repeating_patterns (same {"pattern","count"} shape, same count) for ones that seem stuck, avoided, or causing ongoing distress — worth gently flagging. Do not diagnose. Leave empty if nothing genuinely warrants it.
+- Every pattern must be grounded in the actual entries below — never invent one, and never carry a previous pattern forward if it doesn't genuinely appear this period. If there's too little material, return shorter or empty arrays rather than padding them.
 - Keep each pattern description short enough to show as a single line in a UI.
 ${previousPatternsSection}
 
