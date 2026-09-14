@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
@@ -187,29 +186,27 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={DefaultTheme}>
-      <OnboardingContext.Provider value={setOnboardingComplete}>
-        <AuthGuard session={session} onboardingComplete={onboardingComplete} />
-        <NotificationDeepLinkHandler />
-        <Stack screenOptions={{ headerShown: false }} />
-        <StatusBar style="dark" />
-        {session && appLock?.enabled && locked && appLock.hash && appLock.salt && (
-          <AppLockScreen
-            pinHash={appLock.hash}
-            pinSalt={appLock.salt}
-            onUnlock={(newHash, newSalt) => {
-              if (newHash && newSalt) setAppLock({ enabled: true, hash: newHash, salt: newSalt });
-              setLocked(false);
-            }}
-          />
-        )}
-        {showLaunch && (
-          <LaunchScreen
-            ready={session !== undefined}
-            onFinished={() => setShowLaunch(false)}
-          />
-        )}
-      </OnboardingContext.Provider>
-    </ThemeProvider>
+    <OnboardingContext.Provider value={setOnboardingComplete}>
+      <AuthGuard session={session} onboardingComplete={onboardingComplete} />
+      <NotificationDeepLinkHandler />
+      <Stack screenOptions={{ headerShown: false }} />
+      <StatusBar style="dark" />
+      {session && appLock?.enabled && locked && appLock.hash && appLock.salt && (
+        <AppLockScreen
+          pinHash={appLock.hash}
+          pinSalt={appLock.salt}
+          onUnlock={(newHash, newSalt) => {
+            if (newHash && newSalt) setAppLock({ enabled: true, hash: newHash, salt: newSalt });
+            setLocked(false);
+          }}
+        />
+      )}
+      {showLaunch && (
+        <LaunchScreen
+          ready={session !== undefined}
+          onFinished={() => setShowLaunch(false)}
+        />
+      )}
+    </OnboardingContext.Provider>
   );
 }
