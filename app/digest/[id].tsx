@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { DigestInsightsPanel, type DigestInsights } from '@/components/digest-insights';
 
 type Digest = {
   id: string;
@@ -12,6 +13,7 @@ type Digest = {
   rating: 'up' | 'down' | null;
   seen_at: string | null;
   feedback_comment: string | null;
+  insights: DigestInsights | null;
 };
 
 function formatWeek(dateStr: string) {
@@ -116,6 +118,7 @@ export default function DigestScreen() {
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 48 }}>
+        <DigestInsightsPanel insights={digest.insights} />
         <Text style={{ fontSize: 18, lineHeight: 32, color: '#292524', letterSpacing: 0.1 }}>
           {digest.content}
         </Text>

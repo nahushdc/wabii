@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { DigestInsightsPanel, type DigestInsights } from '@/components/digest-insights';
 
 type MonthlyDigest = {
   id: string;
@@ -12,6 +13,7 @@ type MonthlyDigest = {
   rating: 'up' | 'down' | null;
   seen_at: string | null;
   feedback_comment: string | null;
+  insights: DigestInsights | null;
 };
 
 function formatMonth(dateStr: string) {
@@ -147,6 +149,7 @@ export default function MonthlyDigestScreen() {
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 42 }}>
+        <DigestInsightsPanel insights={digest.insights} />
         <View style={{ backgroundColor: '#FFFCF8', borderRadius: 24, paddingHorizontal: 20, paddingTop: 21, paddingBottom: 8, borderWidth: 1, borderColor: '#E8E0D7' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 19 }}>
             <Feather name="coffee" size={14} color="#B07A37" />

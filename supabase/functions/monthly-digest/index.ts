@@ -13,6 +13,71 @@ const anthropic = new Anthropic({
 
 const NOTIFICATIONS_ENABLED = true;
 
+type DigestInsights = {
+  moods: string[];
+  new_patterns: string[];
+  repeating_patterns: string[];
+  attention_patterns: string[];
+};
+
+function parseInsightsJson(raw: string): DigestInsights | null {
+  const cleaned = raw.replace(/```json\s*|```\s*/g, '').trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    return {
+      moods: Array.isArray(parsed.moods) ? parsed.moods.slice(0, 8) : [],
+      new_patterns: Array.isArray(parsed.new_patterns) ? parsed.new_patterns.slice(0, 8) : [],
+      repeating_patterns: Array.isArray(parsed.repeating_patterns) ? parsed.repeating_patterns.slice(0, 8) : [],
+      attention_patterns: Array.isArray(parsed.attention_patterns) ? parsed.attention_patterns.slice(0, 8) : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function generateInsights(
+  entriesText: string,
+  previousInsights: DigestInsights | null,
+  periodLabel: string,
+): Promise<DigestInsights | null> {
+  const previousPatternsSection = previousInsights && (previousInsights.new_patterns.length || previousInsights.repeating_patterns.length)
+    ? `\n\nPatterns identified in the PREVIOUS ${periodLabel}, for comparison (use these to decide what's "new" vs "repeating" below — a pattern only counts as repeating if it genuinely also shows up in this period's entries, not just because it was mentioned before):\n${[...previousInsights.new_patterns, ...previousInsights.repeating_patterns].map(p => `- ${p}`).join('\n')}`
+    : '\n\nThere is no previous period to compare against — treat every genuine pattern you find as new.';
+
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5',
+    max_tokens: 700,
+    messages: [
+      {
+        role: 'user',
+        content: `Analyze these journal entries from the past ${periodLabel} and return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
+
+{
+  "moods": string[],
+  "new_patterns": string[],
+  "repeating_patterns": string[],
+  "attention_patterns": string[]
+}
+
+Rules:
+- "moods": 2-6 single words or short phrases naming the emotional tones actually present across these entries (e.g. "anxious", "hopeful", "overwhelmed"). Be specific and varied, not generic.
+- "new_patterns": short (under 12 words) descriptions of genuine behavioral/emotional/thought patterns that appear for the FIRST time this period.
+- "repeating_patterns": patterns that were also present in the previous period AND still show up here.
+- "attention_patterns": a SUBSET of repeating_patterns that seem stuck, avoided, or causing ongoing distress — worth gently flagging. Do not diagnose. Leave empty if nothing genuinely warrants it.
+- Every pattern must be grounded in the actual entries below — never invent one. If there's too little material, return shorter or empty arrays rather than padding them.
+- Keep each pattern description short enough to show as a single line in a UI.
+${previousPatternsSection}
+
+Journal entries:
+${entriesText}`,
+      },
+    ],
+  });
+
+  const raw = message.content[0].type === 'text' ? message.content[0].text : '';
+  return parseInsightsJson(raw);
+}
+
 function isLastDayOfUtcMonth(now: Date): boolean {
   const tomorrow = new Date(now);
   tomorrow.setUTCDate(now.getUTCDate() + 1);
@@ -155,12 +220,24 @@ ${entriesText}`,
 
       const digestContent = message.content[0].type === 'text' ? message.content[0].text : '';
 
+      const { data: previousDigest } = await supabase
+        .from('monthly_digests')
+        .select('insights')
+        .eq('user_id', user.id)
+        .lt('month_start', monthStartStr)
+        .order('month_start', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const insights = await generateInsights(entriesText, previousDigest?.insights ?? null, 'month').catch(() => null);
+
       const { data: inserted, error: insertError } = await supabase
         .from('monthly_digests')
         .insert({
           user_id: user.id,
           content: digestContent,
           month_start: monthStartStr,
+          insights,
         })
         .select('id')
         .single();

@@ -9,13 +9,20 @@ import { COLORS } from '@/constants/colors';
 
 type ThemeOption = { id: string; name: string };
 
-type MonthlyDigest = { id: string; content: string; month_start: string; seen_at: string | null };
+type DigestInsights = {
+  moods: string[];
+  new_patterns: string[];
+  repeating_patterns: string[];
+  attention_patterns: string[];
+};
+
+type MonthlyDigest = { id: string; content: string; month_start: string; seen_at: string | null; insights: DigestInsights | null };
 
 type FeedItem =
   | { type: 'search'; id: string; created_at: string; query: string }
   | { type: 'chat'; id: string; created_at: string; entryId: string; preview: string }
   | { type: 'insight'; id: string; created_at: string; themeName: string }
-  | { type: 'reflection'; id: string; created_at: string; period: 'weekly' | 'monthly'; content: string };
+  | { type: 'reflection'; id: string; created_at: string; period: 'weekly' | 'monthly'; content: string; insights: DigestInsights | null };
 
 const FEED_STYLES = {
   search: { icon: 'clock' as const, bg: '#F5F2EC', chipBg: '#E8E1D6', color: '#8a7a6f', tag: 'Search' },
@@ -131,6 +138,44 @@ function formatMonth(dateStr: string) {
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
+function insightSummaryLine(insights: DigestInsights | null): string | null {
+  if (!insights) return null;
+  const parts: string[] = [];
+  if (insights.moods.length) parts.push(`${insights.moods.length} mood${insights.moods.length === 1 ? '' : 's'}`);
+  if (insights.new_patterns.length) parts.push(`${insights.new_patterns.length} new`);
+  if (insights.repeating_patterns.length) parts.push(`${insights.repeating_patterns.length} repeating`);
+  if (insights.attention_patterns.length) parts.push(`${insights.attention_patterns.length} need${insights.attention_patterns.length === 1 ? 's' : ''} attention`);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+function InsightStatRow({ insights, light }: { insights: DigestInsights; light?: boolean }) {
+  const stats: { label: string; count: number; color: string }[] = [
+    { label: insights.moods.length === 1 ? 'mood' : 'moods', count: insights.moods.length, color: light ? '#C9B8E8' : '#8B5FBF' },
+    { label: 'new', count: insights.new_patterns.length, color: light ? '#A9D6A0' : '#3F7A3F' },
+    { label: 'repeating', count: insights.repeating_patterns.length, color: light ? '#F3EEFA' : '#78716c' },
+    { label: insights.attention_patterns.length === 1 ? 'needs attention' : 'need attention', count: insights.attention_patterns.length, color: light ? '#F5B8A8' : '#C2410C' },
+  ].filter(s => s.count > 0);
+
+  if (stats.length === 0) return null;
+
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      {stats.map(s => (
+        <View
+          key={s.label}
+          style={{
+            flexDirection: 'row', alignItems: 'baseline', gap: 4,
+            backgroundColor: light ? 'rgba(255,255,255,0.12)' : '#f7f4ef',
+            borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6,
+          }}>
+          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 13, color: s.color }}>{s.count}</Text>
+          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: light ? 'rgba(255,255,255,0.75)' : '#78716c' }}>{s.label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function formatRelative(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime();
   const diffMin = Math.round(diffMs / 60000);
@@ -160,7 +205,7 @@ export default function SearchScreen() {
     useCallback(() => {
       supabase
         .from('monthly_digests')
-        .select('id, content, month_start, seen_at')
+        .select('id, content, month_start, seen_at, insights')
         .order('month_start', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -185,12 +230,12 @@ export default function SearchScreen() {
           .limit(30),
         supabase
           .from('weekly_digests')
-          .select('id, content, week_start')
+          .select('id, content, week_start, insights')
           .order('week_start', { ascending: false })
           .limit(30),
         supabase
           .from('monthly_digests')
-          .select('id, content, month_start')
+          .select('id, content, month_start, insights')
           .order('month_start', { ascending: false })
           .limit(24),
       ]).then(([searchRes, chatRes, insightRes, weeklyRes, monthlyRes]) => {
@@ -208,10 +253,10 @@ export default function SearchScreen() {
           themeName: i.prompt_themes?.name ?? 'Theme',
         }));
         const weeklyReflections: FeedItem[] = (weeklyRes.data ?? []).map(w => ({
-          type: 'reflection', id: w.id, created_at: w.week_start, period: 'weekly', content: w.content,
+          type: 'reflection', id: w.id, created_at: w.week_start, period: 'weekly', content: w.content, insights: w.insights ?? null,
         }));
         const monthlyReflections: FeedItem[] = (monthlyRes.data ?? []).map(m => ({
-          type: 'reflection', id: m.id, created_at: m.month_start, period: 'monthly', content: m.content,
+          type: 'reflection', id: m.id, created_at: m.month_start, period: 'monthly', content: m.content, insights: m.insights ?? null,
         }));
 
         setFeed(
@@ -309,9 +354,15 @@ export default function SearchScreen() {
                   )}
                 </View>
 
-                <Text style={{ fontSize: 17, fontFamily: 'Inter_500Medium', color: '#F3EEFA', lineHeight: 26, marginBottom: 18 }} numberOfLines={4}>
-                  {stripLeadingHeading(latestMonthly.content)}
-                </Text>
+                {latestMonthly.insights && insightSummaryLine(latestMonthly.insights) ? (
+                  <View style={{ marginBottom: 18 }}>
+                    <InsightStatRow insights={latestMonthly.insights} light />
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 17, fontFamily: 'Inter_500Medium', color: '#F3EEFA', lineHeight: 26, marginBottom: 18 }} numberOfLines={4}>
+                    {stripLeadingHeading(latestMonthly.content)}
+                  </Text>
+                )}
 
                 <View style={{
                   flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -406,7 +457,7 @@ export default function SearchScreen() {
             item.type === 'search' ? item.query
               : item.type === 'chat' ? (preview(item.preview) || 'Chat about an entry')
               : item.type === 'insight' ? `${item.themeName} insights`
-              : preview(stripLeadingHeading(item.content));
+              : insightSummaryLine(item.insights) ?? preview(stripLeadingHeading(item.content));
           const tag = item.type === 'reflection'
             ? (item.period === 'monthly' ? 'Monthly Reflection' : 'Weekly Reflection')
             : style.tag;
