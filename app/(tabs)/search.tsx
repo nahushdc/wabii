@@ -270,7 +270,7 @@ export default function SearchScreen() {
       {latestMonthly && (() => {
         const isNew = !latestMonthly.seen_at;
         return (
-          <View style={{ paddingHorizontal: 20, marginBottom: 26 }}>
+          <View style={{ paddingHorizontal: 24, marginBottom: 26 }}>
             <Pressable onPress={() => router.push(`/monthly-digest/${latestMonthly.id}`)}>
               <LinearGradient
                 colors={['#332946', '#1E1830']}
@@ -391,9 +391,9 @@ export default function SearchScreen() {
         keyExtractor={item => `${item.type}-${item.id}`}
         ListHeaderComponent={listHeader}
         contentContainerStyle={{ paddingBottom: 130 }}
-        ItemSeparatorComponent={() => <View style={{ height: 10, marginHorizontal: 20 }} />}
+        ItemSeparatorComponent={() => <View style={{ height: 10, marginHorizontal: 24 }} />}
         ListEmptyComponent={
-          <View style={{ alignItems: 'center', paddingTop: feed.length === 0 ? 20 : 40, paddingHorizontal: 20 }}>
+          <View style={{ alignItems: 'center', paddingTop: feed.length === 0 ? 20 : 40, paddingHorizontal: 24 }}>
             {feed.length === 0 && <Text style={{ fontSize: 32, marginBottom: 10 }}>🕓</Text>}
             <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#a8a29e', textAlign: 'center' }}>
               {feed.length === 0 ? 'Your searches, chats, insights, and reflections will show up here.' : 'Nothing here yet for this filter.'}
@@ -424,7 +424,7 @@ export default function SearchScreen() {
               style={({ pressed }) => ({
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
-                borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, marginHorizontal: 20,
+                borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, marginHorizontal: 24,
                 shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
               })}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
