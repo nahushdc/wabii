@@ -85,7 +85,7 @@ export default function TabLayout() {
         />
         <TabButton
           active={onSearch}
-          icon="sparkles"
+          icon="brain.head.profile"
           label="Reflect"
           onPress={() => router.push('/(tabs)/search')}
         />
