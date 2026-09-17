@@ -22,20 +22,32 @@ function getSpeechLanguage(): 'multi' | 'en' {
   return region === 'IN' ? 'multi' : 'en';
 }
 
-function base64ToBytes(base64: string): Uint8Array {
+// Lookup table (O(1) per char) instead of chars.indexOf() (O(64) per char) —
+// this runs on every audio chunk on the streaming hot path (4x/sec), so the
+// naive version was slow enough to visibly lag live transcription.
+const BASE64_DECODE_TABLE = (() => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const table = new Int16Array(128).fill(-1);
+  for (let i = 0; i < chars.length; i++) table[chars.charCodeAt(i)] = i;
+  return table;
+})();
+
+function base64ToBytes(base64: string): Uint8Array {
   const clean = base64.replace(/[^A-Za-z0-9+/]/g, '');
-  const bytes: number[] = [];
+  const bytes = new Uint8Array(Math.floor((clean.length * 3) / 4));
+  let byteIndex = 0;
   for (let i = 0; i < clean.length; i += 4) {
-    const e1 = chars.indexOf(clean[i]);
-    const e2 = chars.indexOf(clean[i + 1]);
-    const e3 = clean[i + 2] !== undefined ? chars.indexOf(clean[i + 2]) : -1;
-    const e4 = clean[i + 3] !== undefined ? chars.indexOf(clean[i + 3]) : -1;
-    bytes.push((e1 << 2) | (e2 >> 4));
-    if (e3 >= 0) bytes.push(((e2 & 15) << 4) | (e3 >> 2));
-    if (e4 >= 0) bytes.push(((e3 & 3) << 6) | e4);
+    const e1 = BASE64_DECODE_TABLE[clean.charCodeAt(i)];
+    const e2 = BASE64_DECODE_TABLE[clean.charCodeAt(i + 1)];
+    const c3 = clean.charCodeAt(i + 2);
+    const c4 = clean.charCodeAt(i + 3);
+    const e3 = Number.isNaN(c3) ? -1 : BASE64_DECODE_TABLE[c3];
+    const e4 = Number.isNaN(c4) ? -1 : BASE64_DECODE_TABLE[c4];
+    bytes[byteIndex++] = (e1 << 2) | (e2 >> 4);
+    if (e3 >= 0) bytes[byteIndex++] = ((e2 & 15) << 4) | (e3 >> 2);
+    if (e4 >= 0) bytes[byteIndex++] = ((e3 & 3) << 6) | e4;
   }
-  return new Uint8Array(bytes);
+  return bytes.subarray(0, byteIndex);
 }
 
 type Mode = 'text' | 'voice';
