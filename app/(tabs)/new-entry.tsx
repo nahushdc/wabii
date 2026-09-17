@@ -8,18 +8,16 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAudioPlayer, useAudioPlayerStatus, AudioModule } from 'expo-audio';
 import { useAudioRecorder as useLiveAudioRecorder } from '@siteed/audio-studio';
-import * as Localization from 'expo-localization';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 
-// India gets Nova-3 multilingual (code-switches between English and Hindi
-// and a handful of other languages); everywhere else gets Nova-3 monolingual
-// English, which is more accurate when there's no code-switching to handle.
+// English-only (Nova-3 monolingual) for now — the multilingual/code-switching
+// model is noticeably slower, and English-only is also more accurate when
+// there's no code-switching to actually handle.
 function getSpeechLanguage(): 'multi' | 'en' {
-  const region = Localization.getLocales()[0]?.regionCode;
-  return region === 'IN' ? 'multi' : 'en';
+  return 'en';
 }
 
 // Lookup table (O(1) per char) instead of chars.indexOf() (O(64) per char) —
