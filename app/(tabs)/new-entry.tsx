@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Keyboard, LayoutAnimation, UIManager } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -6,47 +6,12 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useAudioPlayer, useAudioPlayerStatus, AudioModule } from 'expo-audio';
-import { useAudioRecorder as useLiveAudioRecorder } from '@siteed/audio-studio';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
-
-// English-only (Nova-3 monolingual) for now — the multilingual/code-switching
-// model is noticeably slower, and English-only is also more accurate when
-// there's no code-switching to actually handle.
-function getSpeechLanguage(): 'multi' | 'en' {
-  return 'en';
-}
-
-// Lookup table (O(1) per char) instead of chars.indexOf() (O(64) per char) —
-// this runs on every audio chunk on the streaming hot path (4x/sec), so the
-// naive version was slow enough to visibly lag live transcription.
-const BASE64_DECODE_TABLE = (() => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const table = new Int16Array(128).fill(-1);
-  for (let i = 0; i < chars.length; i++) table[chars.charCodeAt(i)] = i;
-  return table;
-})();
-
-function base64ToBytes(base64: string): Uint8Array {
-  const clean = base64.replace(/[^A-Za-z0-9+/]/g, '');
-  const bytes = new Uint8Array(Math.floor((clean.length * 3) / 4));
-  let byteIndex = 0;
-  for (let i = 0; i < clean.length; i += 4) {
-    const e1 = BASE64_DECODE_TABLE[clean.charCodeAt(i)];
-    const e2 = BASE64_DECODE_TABLE[clean.charCodeAt(i + 1)];
-    const c3 = clean.charCodeAt(i + 2);
-    const c4 = clean.charCodeAt(i + 3);
-    const e3 = Number.isNaN(c3) ? -1 : BASE64_DECODE_TABLE[c3];
-    const e4 = Number.isNaN(c4) ? -1 : BASE64_DECODE_TABLE[c4];
-    bytes[byteIndex++] = (e1 << 2) | (e2 >> 4);
-    if (e3 >= 0) bytes[byteIndex++] = ((e2 & 15) << 4) | (e3 >> 2);
-    if (e4 >= 0) bytes[byteIndex++] = ((e3 & 3) << 6) | e4;
-  }
-  return bytes.subarray(0, byteIndex);
-}
+import { useLiveTranscription } from '@/hooks/use-live-transcription';
 
 type Mode = 'text' | 'voice';
 
@@ -158,95 +123,27 @@ function TextComposer({
 
 function VoiceComposer({ transcript, setTranscript }: { transcript: string; setTranscript: (v: string) => void }) {
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
-  const { startRecording: startLiveRecording, stopRecording: stopLiveRecording, isRecording, durationMs } = useLiveAudioRecorder();
   const player = useAudioPlayer(recordedUri ?? undefined);
   const playerStatus = useAudioPlayerStatus(player);
-  const [connecting, setConnecting] = useState(false);
-  const [interimText, setInterimText] = useState('');
+  const { isRecording, connecting, interimText, error: liveError, durationMs, start, stop } = useLiveTranscription({
+    onFinalTranscript: setTranscript,
+  });
   const [error, setError] = useState('');
-  const socketRef = useRef<WebSocket | null>(null);
-  const finalTranscriptRef = useRef('');
 
   async function startRecording() {
     setError('');
-    setInterimText('');
-    try {
-      const { granted } = await AudioModule.requestRecordingPermissionsAsync();
-      if (!granted) { setError('Microphone access is needed to record.'); return; }
-
-      setRecordedUri(null);
-      setTranscript('');
-      finalTranscriptRef.current = '';
-      setConnecting(true);
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const language = getSpeechLanguage();
-      const wsUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL!.replace(/^http/, 'ws')}/functions/v1/transcribe-voice-live?token=${encodeURIComponent(session?.access_token ?? '')}&language=${language}`;
-      const socket = new WebSocket(wsUrl);
-      socketRef.current = socket;
-
-      socket.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          const alt = msg?.channel?.alternatives?.[0];
-          const text = alt?.transcript ?? '';
-          if (!text) return;
-          if (msg.is_final) {
-            finalTranscriptRef.current = `${finalTranscriptRef.current} ${text}`.trim();
-            setTranscript(finalTranscriptRef.current);
-            setInterimText('');
-          } else {
-            setInterimText(text);
-          }
-        } catch {
-          // non-JSON / control frames — ignore
-        }
-      };
-      socket.onerror = () => setError('Live transcription connection had trouble — your recording is still being saved.');
-
-      await new Promise<void>((resolve, reject) => {
-        socket.onopen = () => resolve();
-        socket.onerror = () => reject(new Error('Could not connect for live transcription.'));
-        setTimeout(() => reject(new Error('Timed out connecting for live transcription.')), 8000);
-      });
-      setConnecting(false);
-
-      await startLiveRecording({
-        sampleRate: 16000,
-        channels: 1,
-        encoding: 'pcm_16bit',
-        interval: 250,
-        output: { primary: { enabled: true, format: 'wav' } },
-        onAudioStream: async (event) => {
-          if (typeof event.data !== 'string') return;
-          const bytes = base64ToBytes(event.data);
-          if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(bytes);
-        },
-      });
-    } catch (e: any) {
-      setConnecting(false);
-      setError(e?.message ?? 'Could not start recording.');
-    }
+    setRecordedUri(null);
+    setTranscript('');
+    await start();
   }
 
   async function stopRecording() {
-    try {
-      const result = await stopLiveRecording();
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ type: 'CloseStream' }));
-        socketRef.current.close();
-      }
-      socketRef.current = null;
-      setInterimText('');
-
-      if (!result?.fileUri) {
-        setError('No audio was captured. Try recording again.');
-        return;
-      }
-      setRecordedUri(result.fileUri);
-    } catch (e: any) {
-      setError(e?.message ?? 'Could not finish that recording.');
+    const result = await stop();
+    if (!result?.fileUri) {
+      setError('No audio was captured. Try recording again.');
+      return;
     }
+    setRecordedUri(result.fileUri);
   }
 
   return (
@@ -310,9 +207,9 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
         </View>
       )}
 
-      {error ? (
+      {(error || liveError) ? (
         <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 16 }}>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || liveError}</Text>
         </View>
       ) : null}
 

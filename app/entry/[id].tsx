@@ -1,10 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Alert, Keyboard } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
+import { useLiveTranscription } from '@/hooks/use-live-transcription';
+
+function formatDuration(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
 
 function KeyboardDismissButton() {
   const [visible, setVisible] = useState(false);
@@ -65,6 +73,22 @@ export default function EntryDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const dictationBaseRef = useRef('');
+  const { isRecording: isDictating, connecting: dictationConnecting, interimText, error: dictationError, durationMs, start: startDictationEngine, stop: stopDictationEngine } = useLiveTranscription({
+    onFinalTranscript: (sessionTranscript) => {
+      const base = dictationBaseRef.current;
+      setContent(`${base}${base && sessionTranscript ? ' ' : ''}${sessionTranscript}`.trim());
+    },
+  });
+
+  async function startDictation() {
+    dictationBaseRef.current = content;
+    await startDictationEngine();
+  }
+
+  async function stopDictation() {
+    await stopDictationEngine();
+  }
 
   useEffect(() => {
     async function fetchEntry() {
@@ -154,10 +178,18 @@ export default function EntryDetailScreen() {
         <View style={{ flexDirection: 'row', gap: 16 }}>
           {editing ? (
             <>
-              <Pressable onPress={() => { setEditing(false); setContent(entry.content); setEditTags(tags.map(t => ({ name: t.name, category: t.category }))); }} style={{ padding: 4 }}>
+              <Pressable
+                onPress={isDictating ? stopDictation : startDictation}
+                disabled={dictationConnecting}
+                style={{ padding: 4 }}>
+                {dictationConnecting
+                  ? <ActivityIndicator size="small" color="#a8a29e" />
+                  : <Feather name={isDictating ? 'square' : 'mic'} size={20} color={isDictating ? '#ef4444' : '#78716c'} />}
+              </Pressable>
+              <Pressable onPress={() => { setEditing(false); setContent(entry.content); setEditTags(tags.map(t => ({ name: t.name, category: t.category }))); }} style={{ padding: 4 }} disabled={isDictating}>
                 <Feather name="x" size={22} color="#a8a29e" />
               </Pressable>
-              <Pressable onPress={handleSave} style={{ padding: 4 }} disabled={saving}>
+              <Pressable onPress={handleSave} style={{ padding: 4 }} disabled={saving || isDictating}>
                 {saving
                   ? <ActivityIndicator size="small" color="#E85D2C" />
                   : <Feather name="check" size={22} color="#E85D2C" />}
@@ -187,28 +219,49 @@ export default function EntryDetailScreen() {
             </Text>
           </View>
 
-          {error ? (
+          {(error || dictationError) ? (
             <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
-              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || dictationError}</Text>
             </View>
           ) : null}
 
+          {isDictating && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 24, marginBottom: 12 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444' }} />
+              <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#78716c' }}>
+                Listening… {formatDuration(durationMs)}
+              </Text>
+            </View>
+          )}
+
           {/* A bounded, flex:1 multiline input handles its own internal
               scrolling natively — an unbounded auto-growing one inside a
-              ScrollView can't be dragged to scroll once it fills the screen. */}
-          <TextInput
-            style={{
-              flex: 1,
-              paddingHorizontal: 24, paddingVertical: 8,
-              fontSize: 18, fontFamily: 'Inter_400Regular',
-              color: '#1c1917', lineHeight: 30,
-              textAlignVertical: 'top',
-            }}
-            value={content}
-            onChangeText={setContent}
-            multiline
-            autoFocus
-          />
+              ScrollView can't be dragged to scroll once it fills the screen.
+              While dictating, content updates live from speech, so it's shown
+              as read-only text instead of an editable field — editing it
+              mid-dictation would fight with the incoming transcript. */}
+          {isDictating ? (
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 8 }}>
+              <Text style={{ fontSize: 18, fontFamily: 'Inter_400Regular', color: '#1c1917', lineHeight: 30 }}>
+                {content}
+                {interimText ? <Text style={{ color: '#a8a29e' }}>{content ? ' ' : ''}{interimText}</Text> : null}
+              </Text>
+            </ScrollView>
+          ) : (
+            <TextInput
+              style={{
+                flex: 1,
+                paddingHorizontal: 24, paddingVertical: 8,
+                fontSize: 18, fontFamily: 'Inter_400Regular',
+                color: '#1c1917', lineHeight: 30,
+                textAlignVertical: 'top',
+              }}
+              value={content}
+              onChangeText={setContent}
+              multiline
+              autoFocus
+            />
+          )}
           <TagPicker selected={editTags} onChange={setEditTags} />
           <KeyboardDismissButton />
         </View>
