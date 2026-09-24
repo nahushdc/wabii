@@ -306,11 +306,8 @@ export default function OnboardingScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 28 }}>
-          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
+          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', marginBottom: 20, textAlign: 'center' }}>
             What made you feel like downloading this app?
-          </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#78716c', textAlign: 'center', lineHeight: 21, marginBottom: 20 }}>
-            Whatever's true — type it, or tap the mic to say it out loud.
           </Text>
 
           {(reasonDictationError) ? (
