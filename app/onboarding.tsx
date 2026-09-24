@@ -16,6 +16,16 @@ import { useSetOnboardingComplete } from './_layout';
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
+const SIGNUP_REASONS = [
+  { id: 'process_emotions', icon: 'heart' as const, label: "Process what I'm feeling" },
+  { id: 'build_habit', icon: 'repeat' as const, label: 'Build a journaling habit' },
+  { id: 'understand_patterns', icon: 'trending-up' as const, label: 'Understand my patterns' },
+  { id: 'reduce_stress', icon: 'wind' as const, label: 'Reduce stress or anxiety' },
+  { id: 'therapy_companion', icon: 'users' as const, label: 'Complement therapy' },
+  { id: 'track_growth', icon: 'bar-chart-2' as const, label: "Track how I'm growing" },
+  { id: 'just_curious', icon: 'compass' as const, label: 'Just curious' },
+];
+
 const VALUE_PROPS = [
   { title: 'Get it out', description: 'Type it, talk it, or say it out loud.', chipBg: COLORS.primaryLight, haloBg: '#FBE3D3' },
   { title: 'Reflect with AI', description: 'Get insights on what you write.', chipBg: COLORS.primaryDark, haloBg: '#F4C7AC' },
@@ -67,9 +77,13 @@ export default function OnboardingScreen() {
   const { step } = useLocalSearchParams<{ step?: string }>();
   const isValueStep = !step;
   const isNameStep = step === 'name';
+  const isReasonsStep = step === 'reasons';
   const [loading, setLoading] = useState(false);
   const [finishingAction, setFinishingAction] = useState<'enable' | 'skip' | null>(null);
   const [name, setName] = useState('');
+  const [selectedReasons, setSelectedReasons] = useState<Set<string>>(new Set());
+  const [otherReason, setOtherReason] = useState('');
+  const [reasonsSaving, setReasonsSaving] = useState(false);
   const [reminders, setReminders] = useState(() => INITIAL_REMINDERS.map(r => ({ ...r })));
   const [selectedReminders, setSelectedReminders] = useState<Set<number>>(new Set([0, 1, 2]));
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -81,6 +95,33 @@ export default function OnboardingScreen() {
       setLoading(true);
       await supabase.auth.updateUser({ data: { full_name: trimmed } });
       setLoading(false);
+    }
+    router.replace('/onboarding?step=reasons');
+  }
+
+  function toggleReason(id: string) {
+    setSelectedReasons(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function saveReasons() {
+    const reasons = Array.from(selectedReasons);
+    const other = otherReason.trim();
+    if (reasons.length > 0 || other) {
+      setReasonsSaving(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('users').upsert({
+          id: user.id,
+          signup_reasons: reasons.length > 0 ? reasons : null,
+          signup_reason_other: other || null,
+        });
+      }
+      setReasonsSaving(false);
     }
     router.replace('/onboarding?step=welcome');
   }
@@ -240,7 +281,100 @@ export default function OnboardingScreen() {
               ? <ActivityIndicator color="white" />
               : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Continue</Text>}
           </Pressable>
-          <Pressable onPress={() => router.replace('/onboarding?step=welcome')} disabled={loading}>
+          <Pressable onPress={() => router.replace('/onboarding?step=reasons')} disabled={loading}>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#a8a29e' }}>Skip for now</Text>
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+      </WarmBackground>
+    );
+  }
+
+  if (isReasonsStep) {
+    const hasOther = otherReason.trim().length > 0;
+    const canContinue = selectedReasons.size > 0 || hasOther;
+    return (
+      <WarmBackground>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 28 }}>
+          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
+            What brings you here?
+          </Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#78716c', textAlign: 'center', lineHeight: 21, marginBottom: 24 }}>
+            Pick whatever fits — as many as you like.
+          </Text>
+
+          <View style={{ marginBottom: 12 }}>
+            {SIGNUP_REASONS.map(r => {
+              const selected = selectedReasons.has(r.id);
+              return (
+                <Pressable
+                  key={r.id}
+                  onPress={() => toggleReason(r.id)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 12,
+                    backgroundColor: '#ffffff', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginBottom: 8,
+                    borderWidth: 1.5, borderColor: selected ? COLORS.primary : 'transparent',
+                    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+                  }}>
+                  <View style={{
+                    width: 30, height: 30, borderRadius: 15, backgroundColor: selected ? COLORS.primary : '#f7f4ef',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Feather name={r.icon} size={14} color={selected ? '#ffffff' : '#a8a29e'} />
+                  </View>
+                  <Text style={{ flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>{r.label}</Text>
+                  <View style={{
+                    width: 20, height: 20, borderRadius: 6, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: selected ? COLORS.primary : 'transparent',
+                    borderWidth: 1.5, borderColor: selected ? COLORS.primary : '#d6d0c8',
+                  }}>
+                    {selected && <Feather name="check" size={12} color="#ffffff" />}
+                  </View>
+                </Pressable>
+              );
+            })}
+
+            {/* Custom "other" field — always visible rather than gated behind
+                its own chip, so it doesn't feel like a hidden escape hatch. */}
+            <View style={{
+              backgroundColor: '#ffffff', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13,
+              borderWidth: 1.5, borderColor: hasOther ? COLORS.primary : 'transparent',
+              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{
+                  width: 30, height: 30, borderRadius: 15, backgroundColor: hasOther ? COLORS.primary : '#f7f4ef',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Feather name="edit-3" size={13} color={hasOther ? '#ffffff' : '#a8a29e'} />
+                </View>
+                <TextInput
+                  style={{ flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917', paddingVertical: 4 }}
+                  placeholder="Something else…"
+                  placeholderTextColor="#c4b9b0"
+                  value={otherReason}
+                  onChangeText={setOtherReason}
+                  returnKeyType="done"
+                />
+              </View>
+            </View>
+          </View>
+
+          <Pressable
+            onPress={saveReasons}
+            disabled={reasonsSaving || !canContinue}
+            style={{
+              backgroundColor: canContinue ? COLORS.primary : '#e7e5e4',
+              borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 12, marginBottom: 14, width: '100%',
+            }}>
+            {reasonsSaving
+              ? <ActivityIndicator color="white" />
+              : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Continue</Text>}
+          </Pressable>
+          <Pressable onPress={() => router.replace('/onboarding?step=welcome')} disabled={reasonsSaving} style={{ alignSelf: 'center' }}>
             <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#a8a29e' }}>Skip for now</Text>
           </Pressable>
         </View>
