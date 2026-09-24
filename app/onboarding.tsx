@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -12,18 +12,20 @@ import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { registerForPushNotifications } from '@/lib/notifications';
 import { COLORS } from '@/constants/colors';
+import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { useSetOnboardingComplete } from './_layout';
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
-const SIGNUP_REASONS = [
-  { id: 'process_emotions', icon: 'heart' as const, label: "Process what I'm feeling" },
-  { id: 'build_habit', icon: 'repeat' as const, label: 'Build a journaling habit' },
-  { id: 'understand_patterns', icon: 'trending-up' as const, label: 'Understand my patterns' },
-  { id: 'reduce_stress', icon: 'wind' as const, label: 'Reduce stress or anxiety' },
-  { id: 'therapy_companion', icon: 'users' as const, label: 'Complement therapy' },
-  { id: 'track_growth', icon: 'bar-chart-2' as const, label: "Track how I'm growing" },
-  { id: 'just_curious', icon: 'compass' as const, label: 'Just curious' },
+// Tappable starters, not exclusive categories — tapping one inserts that
+// phrase into the open field rather than "selecting" it, so the field stays
+// the source of truth and people can edit/extend from there.
+const REASON_STARTERS = [
+  "It's hard to sit with my emotions",
+  'I want to understand myself better',
+  "I'm going through something and need to process it",
+  'I just want a place to vent',
+  'My therapist recommended journaling',
 ];
 
 const VALUE_PROPS = [
@@ -81,9 +83,15 @@ export default function OnboardingScreen() {
   const [loading, setLoading] = useState(false);
   const [finishingAction, setFinishingAction] = useState<'enable' | 'skip' | null>(null);
   const [name, setName] = useState('');
-  const [selectedReasons, setSelectedReasons] = useState<Set<string>>(new Set());
-  const [otherReason, setOtherReason] = useState('');
+  const [reasonText, setReasonText] = useState('');
   const [reasonsSaving, setReasonsSaving] = useState(false);
+  const dictationBaseRef = useRef('');
+  const { isRecording: isDictatingReason, connecting: reasonDictationConnecting, interimText: reasonInterimText, error: reasonDictationError, start: startReasonDictation, stop: stopReasonDictation } = useLiveTranscription({
+    onFinalTranscript: (sessionTranscript) => {
+      const base = dictationBaseRef.current;
+      setReasonText(`${base}${base && sessionTranscript ? ' ' : ''}${sessionTranscript}`.trim());
+    },
+  });
   const [reminders, setReminders] = useState(() => INITIAL_REMINDERS.map(r => ({ ...r })));
   const [selectedReminders, setSelectedReminders] = useState<Set<number>>(new Set([0, 1, 2]));
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -99,27 +107,27 @@ export default function OnboardingScreen() {
     router.replace('/onboarding?step=reasons');
   }
 
-  function toggleReason(id: string) {
-    setSelectedReasons(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  function insertReasonStarter(phrase: string) {
+    setReasonText(prev => {
+      const trimmed = prev.trim();
+      if (!trimmed) return phrase;
+      const needsPeriod = !/[.!?]$/.test(trimmed);
+      return `${trimmed}${needsPeriod ? '.' : ''} ${phrase}`;
     });
   }
 
+  async function startReasonMic() {
+    dictationBaseRef.current = reasonText;
+    await startReasonDictation();
+  }
+
   async function saveReasons() {
-    const reasons = Array.from(selectedReasons);
-    const other = otherReason.trim();
-    if (reasons.length > 0 || other) {
+    const text = reasonText.trim();
+    if (text) {
       setReasonsSaving(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        await supabase.from('users').upsert({
-          id: user.id,
-          signup_reasons: reasons.length > 0 ? reasons : null,
-          signup_reason_other: other || null,
-        });
+        await supabase.from('users').upsert({ id: user.id, signup_reason: text });
       }
       setReasonsSaving(false);
     }
@@ -291,8 +299,7 @@ export default function OnboardingScreen() {
   }
 
   if (isReasonsStep) {
-    const hasOther = otherReason.trim().length > 0;
-    const canContinue = selectedReasons.size > 0 || hasOther;
+    const canContinue = reasonText.trim().length > 0;
     return (
       <WarmBackground>
       <KeyboardAvoidingView
@@ -300,67 +307,66 @@ export default function OnboardingScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 28 }}>
           <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
-            What brings you here?
+            What made you feel like you needed this, right now?
           </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#78716c', textAlign: 'center', lineHeight: 21, marginBottom: 24 }}>
-            Pick whatever fits — as many as you like.
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#78716c', textAlign: 'center', lineHeight: 21, marginBottom: 20 }}>
+            Whatever's true — type it, or tap the mic to say it out loud.
           </Text>
 
-          <View style={{ marginBottom: 12 }}>
-            {SIGNUP_REASONS.map(r => {
-              const selected = selectedReasons.has(r.id);
-              return (
-                <Pressable
-                  key={r.id}
-                  onPress={() => toggleReason(r.id)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 12,
-                    backgroundColor: '#ffffff', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, marginBottom: 8,
-                    borderWidth: 1.5, borderColor: selected ? COLORS.primary : 'transparent',
-                    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
-                  }}>
-                  <View style={{
-                    width: 30, height: 30, borderRadius: 15, backgroundColor: selected ? COLORS.primary : '#f7f4ef',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <Feather name={r.icon} size={14} color={selected ? '#ffffff' : '#a8a29e'} />
-                  </View>
-                  <Text style={{ flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>{r.label}</Text>
-                  <View style={{
-                    width: 20, height: 20, borderRadius: 6, alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: selected ? COLORS.primary : 'transparent',
-                    borderWidth: 1.5, borderColor: selected ? COLORS.primary : '#d6d0c8',
-                  }}>
-                    {selected && <Feather name="check" size={12} color="#ffffff" />}
-                  </View>
-                </Pressable>
-              );
-            })}
-
-            {/* Custom "other" field — always visible rather than gated behind
-                its own chip, so it doesn't feel like a hidden escape hatch. */}
-            <View style={{
-              backgroundColor: '#ffffff', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13,
-              borderWidth: 1.5, borderColor: hasOther ? COLORS.primary : 'transparent',
-              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
-            }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{
-                  width: 30, height: 30, borderRadius: 15, backgroundColor: hasOther ? COLORS.primary : '#f7f4ef',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Feather name="edit-3" size={13} color={hasOther ? '#ffffff' : '#a8a29e'} />
-                </View>
-                <TextInput
-                  style={{ flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917', paddingVertical: 4 }}
-                  placeholder="Something else…"
-                  placeholderTextColor="#c4b9b0"
-                  value={otherReason}
-                  onChangeText={setOtherReason}
-                  returnKeyType="done"
-                />
-              </View>
+          {(reasonDictationError) ? (
+            <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 12 }}>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{reasonDictationError}</Text>
             </View>
+          ) : null}
+
+          <View style={{
+            backgroundColor: '#ffffff', borderRadius: 16, padding: 16, minHeight: 130, marginBottom: 14,
+            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+          }}>
+            {isDictatingReason ? (
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24 }}>
+                {reasonText}
+                {reasonInterimText ? <Text style={{ color: '#a8a29e' }}>{reasonText ? ' ' : ''}{reasonInterimText}</Text> : null}
+              </Text>
+            ) : (
+              <TextInput
+                style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24, minHeight: 70, textAlignVertical: 'top' }}
+                placeholder="e.g. It's hard to sit with my emotions, and I don't have anyone to talk to about it."
+                placeholderTextColor="#c4b9b0"
+                value={reasonText}
+                onChangeText={setReasonText}
+                multiline
+              />
+            )}
+
+            <Pressable
+              onPress={isDictatingReason ? stopReasonDictation : startReasonMic}
+              disabled={reasonDictationConnecting}
+              style={{
+                alignSelf: 'flex-end', marginTop: 8,
+                width: 40, height: 40, borderRadius: 20,
+                backgroundColor: isDictatingReason ? '#ef4444' : reasonDictationConnecting ? '#e7e5e4' : '#f7f4ef',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+              {reasonDictationConnecting
+                ? <ActivityIndicator size="small" color="#a8a29e" />
+                : <Feather name={isDictatingReason ? 'square' : 'mic'} size={17} color={isDictatingReason ? '#ffffff' : '#78716c'} />}
+            </Pressable>
+          </View>
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            {REASON_STARTERS.map(phrase => (
+              <Pressable
+                key={phrase}
+                onPress={() => insertReasonStarter(phrase)}
+                disabled={isDictatingReason}
+                style={{
+                  backgroundColor: '#ffffff', borderRadius: 20, paddingHorizontal: 13, paddingVertical: 8,
+                  shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
+                }}>
+                <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12.5, color: '#78716c' }}>{phrase}</Text>
+              </Pressable>
+            ))}
           </View>
 
           <Pressable
@@ -368,7 +374,7 @@ export default function OnboardingScreen() {
             disabled={reasonsSaving || !canContinue}
             style={{
               backgroundColor: canContinue ? COLORS.primary : '#e7e5e4',
-              borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 12, marginBottom: 14, width: '100%',
+              borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 4, marginBottom: 14, width: '100%',
             }}>
             {reasonsSaving
               ? <ActivityIndicator color="white" />
