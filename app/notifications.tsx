@@ -45,11 +45,17 @@ export default function NotificationsScreen() {
   const [notifyLoading, setNotifyLoading] = useState(false);
   // null while unknown/checking, so the banner doesn't flash on before we know.
   const [pushStatus, setPushStatus] = useState<'granted' | 'denied' | 'undetermined' | null>(null);
+  const [hasPushToken, setHasPushToken] = useState<boolean | null>(null);
   const [pushEnabling, setPushEnabling] = useState(false);
+  const [pushError, setPushError] = useState('');
 
   async function checkPushStatus() {
     const { status } = await Notifications.getPermissionsAsync();
     setPushStatus(status as 'granted' | 'denied' | 'undetermined');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from('users').select('push_token').eq('id', user.id).single();
+    setHasPushToken(!!data?.push_token);
   }
 
   async function handleEnablePush() {
@@ -61,8 +67,12 @@ export default function NotificationsScreen() {
       return;
     }
     setPushEnabling(true);
+    setPushError('');
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) await registerForPushNotifications(user.id);
+    if (user) {
+      const result = await registerForPushNotifications(user.id);
+      if (!result.success) setPushError(result.error);
+    }
     await checkPushStatus();
     setPushEnabling(false);
   }
@@ -147,32 +157,41 @@ export default function NotificationsScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 24 }}>
-        {(pushStatus === 'denied' || pushStatus === 'undetermined') && (
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', gap: 12,
-            backgroundColor: '#fff1f0', borderRadius: 16, padding: 16, marginBottom: 16,
-          }}>
-            <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' }}>
-              <Feather name="bell-off" size={15} color="#ef4444" />
+        {(pushStatus === 'denied' || pushStatus === 'undetermined' || (pushStatus === 'granted' && hasPushToken === false)) && (
+          <View style={{ marginBottom: 16 }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12,
+              backgroundColor: '#fff1f0', borderRadius: 16, padding: 16,
+            }}>
+              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="bell-off" size={15} color="#ef4444" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#1c1917', marginBottom: 2 }}>
+                  Notifications aren't enabled
+                </Text>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#78716c', lineHeight: 17 }}>
+                  {pushStatus === 'denied'
+                    ? "You'll need to turn this on in Settings for reminders to reach you."
+                    : pushStatus === 'granted'
+                    ? "Permission's on, but we couldn't save your device — tap to retry."
+                    : "Reminders below won't reach you until this is on."}
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleEnablePush}
+                disabled={pushEnabling}
+                style={{ backgroundColor: '#ef4444', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
+                {pushEnabling
+                  ? <ActivityIndicator size="small" color="#ffffff" />
+                  : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: '#ffffff' }}>{pushStatus === 'denied' ? 'Settings' : 'Enable'}</Text>}
+              </Pressable>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#1c1917', marginBottom: 2 }}>
-                Notifications aren't enabled
+            {pushError ? (
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: '#ef4444', marginTop: 8, marginLeft: 4 }}>
+                {pushError}
               </Text>
-              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#78716c', lineHeight: 17 }}>
-                {pushStatus === 'denied'
-                  ? "You'll need to turn this on in Settings for reminders to reach you."
-                  : "Reminders below won't reach you until this is on."}
-              </Text>
-            </View>
-            <Pressable
-              onPress={handleEnablePush}
-              disabled={pushEnabling}
-              style={{ backgroundColor: '#ef4444', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
-              {pushEnabling
-                ? <ActivityIndicator size="small" color="#ffffff" />
-                : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: '#ffffff' }}>{pushStatus === 'denied' ? 'Settings' : 'Enable'}</Text>}
-            </Pressable>
+            ) : null}
           </View>
         )}
 
