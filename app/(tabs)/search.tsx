@@ -18,6 +18,16 @@ type DigestInsights = {
 };
 
 type MonthlyDigest = { id: string; content: string; month_start: string; seen_at: string | null; insights: DigestInsights | null };
+type WeeklyDigestSummary = { id: string; week_start: string; seen_at: string | null };
+
+// Alternating pastel + slight rotation for each mini weekly card, so the row
+// reads like a little scattered stack of notes rather than a rigid list.
+const WEEKLY_CARD_STYLES = [
+  { bg: '#E6F3E0', accent: '#3F7A3F', rotate: '-3deg' },
+  { bg: '#FDE6DB', accent: '#C2410C', rotate: '2deg' },
+  { bg: '#EFE6FB', accent: '#6D4CAD', rotate: '-2deg' },
+  { bg: '#FCEFCF', accent: '#A87B1B', rotate: '3deg' },
+];
 
 type FeedItem =
   | { type: 'search'; id: string; created_at: string; query: string }
@@ -139,6 +149,14 @@ function formatMonth(dateStr: string) {
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
+function formatWeek(dateStr: string) {
+  const date = new Date(dateStr);
+  const end = new Date(date);
+  end.setDate(date.getDate() + 6);
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(date)} – ${fmt(end)}`;
+}
+
 function insightSummaryLine(insights: DigestInsights | null): string | null {
   if (!insights) return null;
   const parts: string[] = [];
@@ -192,6 +210,7 @@ export default function SearchScreen() {
   const [themes, setThemes] = useState<ThemeOption[]>([]);
   const [insightLoadingId, setInsightLoadingId] = useState<string | null>(null);
   const [latestMonthly, setLatestMonthly] = useState<MonthlyDigest | null>(null);
+  const [weeklyDigests, setWeeklyDigests] = useState<WeeklyDigestSummary[]>([]);
 
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<Set<FeedType>>(new Set(ALL_FEED_TYPES));
@@ -211,6 +230,13 @@ export default function SearchScreen() {
         .limit(1)
         .maybeSingle()
         .then(({ data }) => setLatestMonthly(data ?? null));
+
+      supabase
+        .from('weekly_digests')
+        .select('id, week_start, seen_at')
+        .order('week_start', { ascending: false })
+        .limit(10)
+        .then(({ data }) => setWeeklyDigests(data ?? []));
 
       Promise.all([
         supabase
@@ -377,6 +403,49 @@ export default function SearchScreen() {
           </View>
         );
       })()}
+
+      {/* Weekly reflections — small scattered note cards */}
+      {weeklyDigests.length > 0 && (
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{
+            fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.4, textTransform: 'uppercase',
+            color: '#c4b9b0', paddingHorizontal: 24, marginBottom: 12,
+          }}>
+            Weekly reflections
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 6, gap: 14 }}
+            style={{ flexGrow: 0 }}>
+            {weeklyDigests.map((w, i) => {
+              const cardStyle = WEEKLY_CARD_STYLES[i % WEEKLY_CARD_STYLES.length];
+              const isNew = !w.seen_at;
+              return (
+                <Pressable
+                  key={w.id}
+                  onPress={() => router.push(`/digest/${w.id}`)}
+                  style={{
+                    width: 118, minHeight: 96, backgroundColor: cardStyle.bg, borderRadius: 14,
+                    padding: 12, transform: [{ rotate: cardStyle.rotate }],
+                    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
+                  }}>
+                  {isNew && (
+                    <View style={{
+                      position: 'absolute', top: 8, right: 8, width: 7, height: 7, borderRadius: 4,
+                      backgroundColor: cardStyle.accent,
+                    }} />
+                  )}
+                  <Text style={{ fontSize: 16, marginBottom: 8 }}>🌿</Text>
+                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 11, color: cardStyle.accent, lineHeight: 15 }}>
+                    {formatWeek(w.week_start)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       {themes.length > 0 && (
         <View style={{ marginBottom: 22 }}>
