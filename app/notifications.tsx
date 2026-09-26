@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { ReliableSwitch } from '@/components/reliable-switch';
 import { registerForPushNotifications } from '@/lib/notifications';
+import { scheduleReminderOccurrences, cancelAllForReminder } from '@/lib/reminder-notifications';
 
 type Reminder = {
   id: string;
@@ -119,6 +120,7 @@ export default function NotificationsScreen() {
   async function toggleEnabled(reminder: Reminder, value: boolean) {
     setReminders(prev => prev.map(r => (r.id === reminder.id ? { ...r, enabled: value } : r)));
     await supabase.from('reminders').update({ enabled: value }).eq('id', reminder.id);
+    await scheduleReminderOccurrences({ ...reminder, enabled: value });
   }
 
   function handleDelete(reminder: Reminder) {
@@ -128,6 +130,7 @@ export default function NotificationsScreen() {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
           await supabase.from('reminders').delete().eq('id', reminder.id);
+          await cancelAllForReminder(reminder.id);
           setReminders(prev => prev.filter(r => r.id !== reminder.id));
         },
       },

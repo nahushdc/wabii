@@ -12,6 +12,7 @@ import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
+import { cancelTodaysReminderOccurrencesIfJournaled } from '@/lib/reminder-notifications';
 
 type Mode = 'text' | 'voice';
 
@@ -422,6 +423,11 @@ export default function NewEntryScreen() {
     supabase.functions.invoke('embed-entry', {
       body: { entry_id: entry.id, content: finalContent },
     });
+
+    // Only after the entry is actually saved — cancel today's reminder(s)
+    // for skip_if_journaled, not before, so a save that fails partway
+    // through still leaves the reminder in place.
+    cancelTodaysReminderOccurrencesIfJournaled();
 
     setLoading(false);
     router.replace('/(tabs)');

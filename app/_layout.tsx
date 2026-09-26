@@ -7,6 +7,7 @@ import '../global.css';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { registerForPushNotifications } from '@/lib/notifications';
+import { syncAllReminderNotifications } from '@/lib/reminder-notifications';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import { WarmBackground } from '@/components/warm-background';
 import { LaunchScreen } from '@/components/launch-screen';
@@ -134,7 +135,10 @@ export default function RootLayout() {
         setOnboardingComplete(complete);
         // Already-onboarded users keep getting registered automatically on app open,
         // as before. New users get this deferred to the end of the onboarding flow.
-        if (complete) registerForPushNotifications(session.user.id);
+        if (complete) {
+          registerForPushNotifications(session.user.id);
+          syncAllReminderNotifications();
+        }
         const lock = await loadAppLockSettings(session.user.id);
         setAppLock(lock);
         setLocked(lock.enabled);
@@ -153,7 +157,10 @@ export default function RootLayout() {
       if (event === 'SIGNED_IN' && session?.user?.id) {
         const complete = await loadOnboardingComplete(session.user.id);
         setOnboardingComplete(complete);
-        if (complete) registerForPushNotifications(session.user.id);
+        if (complete) {
+          registerForPushNotifications(session.user.id);
+          syncAllReminderNotifications();
+        }
         const lock = await loadAppLockSettings(session.user.id);
         setAppLock(lock);
         setLocked(lock.enabled);
@@ -176,10 +183,16 @@ export default function RootLayout() {
       if (appStateRef.current === 'active' && next !== 'active' && appLock?.enabled) {
         setLocked(true);
       }
+      // Local reminder notifications are only scheduled a rolling window
+      // ahead — top it up on every foreground so a long-backgrounded app
+      // doesn't run out of upcoming occurrences.
+      if (appStateRef.current !== 'active' && next === 'active' && session && onboardingComplete) {
+        syncAllReminderNotifications();
+      }
       appStateRef.current = next;
     });
     return () => sub.remove();
-  }, [appLock?.enabled]);
+  }, [appLock?.enabled, session, onboardingComplete]);
 
   if (!fontsLoaded) {
     return <WarmBackground />;

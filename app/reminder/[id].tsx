@@ -6,6 +6,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { ReliableSwitch } from '@/components/reliable-switch';
+import { scheduleReminderOccurrences, cancelAllForReminder } from '@/lib/reminder-notifications';
 
 function timeToDate(hour: number, minute: number): Date {
   const d = new Date();
@@ -43,6 +44,7 @@ export default function ReminderScreen() {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [enabled, setEnabled] = useState(true);
 
   useEffect(() => {
     supabase.from('prompt_themes').select('id, name').eq('status', 'active').order('created_at', { ascending: false }).then(({ data }) => {
@@ -55,7 +57,7 @@ export default function ReminderScreen() {
     async function fetchReminder() {
       const { data } = await supabase
         .from('reminders')
-        .select('hour, minute, message, skip_if_journaled, days_of_week, prompt_theme_id')
+        .select('hour, minute, message, skip_if_journaled, days_of_week, prompt_theme_id, enabled')
         .eq('id', id)
         .single();
       if (data) {
@@ -64,6 +66,7 @@ export default function ReminderScreen() {
         setSkipIfJournaled(data.skip_if_journaled ?? true);
         setSelectedDays(new Set(data.days_of_week ?? ALL_DAYS));
         setThemeId(data.prompt_theme_id ?? null);
+        setEnabled(data.enabled ?? true);
       }
       setLoading(false);
     }
@@ -95,11 +98,20 @@ export default function ReminderScreen() {
       prompt_theme_id: themeId,
     };
 
+    let reminderId = id;
     if (isNew) {
       const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from('reminders').insert({ ...payload, user_id: user!.id, enabled: true });
+      const { data: inserted } = await supabase
+        .from('reminders')
+        .insert({ ...payload, user_id: user!.id, enabled: true })
+        .select('id')
+        .single();
+      reminderId = inserted?.id;
     } else {
       await supabase.from('reminders').update(payload).eq('id', id);
+    }
+    if (reminderId) {
+      await scheduleReminderOccurrences({ id: reminderId, ...payload, enabled: isNew ? true : enabled });
     }
     setSaving(false);
     router.back();
@@ -112,6 +124,7 @@ export default function ReminderScreen() {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
           await supabase.from('reminders').delete().eq('id', id);
+          await cancelAllForReminder(id);
           router.back();
         },
       },
