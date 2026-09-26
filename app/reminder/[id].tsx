@@ -184,6 +184,8 @@ export default function ReminderScreen() {
               value={time}
               mode="time"
               display="spinner"
+              themeVariant="light"
+              textColor="#1c1917"
               onChange={(_, selected) => { if (selected) setTime(selected); }}
             />
             <Pressable
