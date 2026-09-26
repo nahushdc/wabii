@@ -1,10 +1,12 @@
 import { useState, useCallback } from 'react';
-import { View, Text, Pressable, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Alert, ScrollView, Linking } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { ReliableSwitch } from '@/components/reliable-switch';
+import { registerForPushNotifications } from '@/lib/notifications';
 
 type Reminder = {
   id: string;
@@ -41,6 +43,29 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState(true);
   const [notifyRequested, setNotifyRequested] = useState(false);
   const [notifyLoading, setNotifyLoading] = useState(false);
+  // null while unknown/checking, so the banner doesn't flash on before we know.
+  const [pushStatus, setPushStatus] = useState<'granted' | 'denied' | 'undetermined' | null>(null);
+  const [pushEnabling, setPushEnabling] = useState(false);
+
+  async function checkPushStatus() {
+    const { status } = await Notifications.getPermissionsAsync();
+    setPushStatus(status as 'granted' | 'denied' | 'undetermined');
+  }
+
+  async function handleEnablePush() {
+    if (pushEnabling) return;
+    if (pushStatus === 'denied') {
+      // requestPermissionsAsync won't re-prompt once denied — only the OS
+      // settings screen can flip it back.
+      Linking.openSettings();
+      return;
+    }
+    setPushEnabling(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) await registerForPushNotifications(user.id);
+    await checkPushStatus();
+    setPushEnabling(false);
+  }
 
   async function fetchReminders() {
     const { data } = await supabase
@@ -66,7 +91,7 @@ export default function NotificationsScreen() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      Promise.all([fetchReminders(), fetchNotifyRequested()]).finally(() => setLoading(false));
+      Promise.all([fetchReminders(), fetchNotifyRequested(), checkPushStatus()]).finally(() => setLoading(false));
     }, [])
   );
 
@@ -122,6 +147,35 @@ export default function NotificationsScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 24 }}>
+        {(pushStatus === 'denied' || pushStatus === 'undetermined') && (
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 12,
+            backgroundColor: '#fff1f0', borderRadius: 16, padding: 16, marginBottom: 16,
+          }}>
+            <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' }}>
+              <Feather name="bell-off" size={15} color="#ef4444" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#1c1917', marginBottom: 2 }}>
+                Notifications aren't enabled
+              </Text>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#78716c', lineHeight: 17 }}>
+                {pushStatus === 'denied'
+                  ? "You'll need to turn this on in Settings for reminders to reach you."
+                  : "Reminders below won't reach you until this is on."}
+              </Text>
+            </View>
+            <Pressable
+              onPress={handleEnablePush}
+              disabled={pushEnabling}
+              style={{ backgroundColor: '#ef4444', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
+              {pushEnabling
+                ? <ActivityIndicator size="small" color="#ffffff" />
+                : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: '#ffffff' }}>{pushStatus === 'denied' ? 'Settings' : 'Enable'}</Text>}
+            </Pressable>
+          </View>
+        )}
+
         <View style={{
           backgroundColor: '#2A2530', borderRadius: 18, padding: 20, marginBottom: 20,
         }}>
