@@ -6,9 +6,16 @@ export type PushRegistrationResult = { success: true } | { success: false; error
 
 export async function registerForPushNotifications(userId: string): Promise<PushRegistrationResult> {
   try {
+    // email is NOT NULL on users — harmless to re-write on an UPDATE, but
+    // required if this upsert ever has to INSERT (e.g. no row yet for this
+    // id), which a bare {id, timezone}/{id, push_token} payload can't satisfy.
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const email = authUser?.email;
+
     // Save timezone regardless of notification support
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    await supabase.from('users').upsert({ id: userId, timezone });
+    const { error: tzErr } = await supabase.from('users').upsert({ id: userId, email, timezone });
+    if (tzErr) return { success: false, error: `Couldn't save timezone: ${tzErr.message}` };
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -32,7 +39,7 @@ export async function registerForPushNotifications(userId: string): Promise<Push
       return { success: false, error: e?.message ?? 'Could not get a push token.' };
     }
 
-    const { error: upsertErr } = await supabase.from('users').upsert({ id: userId, push_token: token, timezone });
+    const { error: upsertErr } = await supabase.from('users').upsert({ id: userId, email, push_token: token, timezone });
     if (upsertErr) return { success: false, error: `Got a push token but couldn't save it: ${upsertErr.message}` };
 
     if (Platform.OS === 'android') {

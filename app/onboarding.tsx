@@ -127,7 +127,9 @@ export default function OnboardingScreen() {
       setReasonsSaving(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        await supabase.from('users').upsert({ id: user.id, signup_reason: text });
+        // email is required if this upsert ever has to INSERT (no row yet for
+        // this id) — a bare {id, signup_reason} payload can't satisfy that.
+        await supabase.from('users').upsert({ id: user.id, email: user.email, signup_reason: text });
       }
       setReasonsSaving(false);
     }
@@ -169,7 +171,9 @@ export default function OnboardingScreen() {
         });
         await supabase.from('reminders').insert(rows);
       }
-      const { error: upsertErr } = await supabase.from('users').upsert({ id: user.id, onboarding_complete: true });
+      // email is required if this upsert ever has to INSERT (no row yet for
+      // this id) — a bare {id, onboarding_complete} payload can't satisfy that.
+      const { error: upsertErr } = await supabase.from('users').upsert({ id: user.id, email: user.email, onboarding_complete: true });
       if (upsertErr) console.warn('Failed to persist onboarding_complete:', upsertErr.message);
       // Push permission involves a native prompt the user may not respond to
       // right away — don't block finishing onboarding on it.
