@@ -39,6 +39,8 @@ function formatDays(days: number[]) {
 
 const PROACTIVE_REMINDERS_FEATURE = 'proactive_reminders';
 
+type ScheduledDebugInfo = { id: string; title: string; body: string; trigger: string };
+
 export default function NotificationsScreen() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +50,20 @@ export default function NotificationsScreen() {
   const [pushStatus, setPushStatus] = useState<'granted' | 'denied' | 'undetermined' | null>(null);
   const [hasPushToken, setHasPushToken] = useState<boolean | null>(null);
   const [pushEnabling, setPushEnabling] = useState(false);
+  // Temporary diagnostic: what's actually scheduled at the OS level, so a
+  // "reminder didn't fire" report can be narrowed down to never-scheduled
+  // vs. scheduled-but-silently-not-delivered without needing device logs.
+  const [scheduledDebug, setScheduledDebug] = useState<ScheduledDebugInfo[] | null>(null);
+
+  async function loadScheduledDebug() {
+    const all = await Notifications.getAllScheduledNotificationsAsync();
+    setScheduledDebug(all.map(n => ({
+      id: n.identifier,
+      title: n.content.title ?? '',
+      body: n.content.body ?? '',
+      trigger: JSON.stringify(n.trigger),
+    })));
+  }
   const [pushError, setPushError] = useState('');
 
   async function checkPushStatus() {
@@ -102,7 +118,7 @@ export default function NotificationsScreen() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      Promise.all([fetchReminders(), fetchNotifyRequested(), checkPushStatus()]).finally(() => setLoading(false));
+      Promise.all([fetchReminders(), fetchNotifyRequested(), checkPushStatus(), loadScheduledDebug()]).finally(() => setLoading(false));
     }, [])
   );
 
@@ -240,6 +256,23 @@ export default function NotificationsScreen() {
             )}
           </Pressable>
         </View>
+
+        {scheduledDebug !== null && (
+          <View style={{ backgroundColor: '#1c1917', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 11, color: '#F5C7B0', marginBottom: 8 }}>
+              DEBUG · {scheduledDebug.length} scheduled locally
+            </Text>
+            {scheduledDebug.length === 0 ? (
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: '#d6d0c8' }}>Nothing scheduled.</Text>
+            ) : (
+              scheduledDebug.map(s => (
+                <Text key={s.id} style={{ fontFamily: 'Inter_400Regular', fontSize: 10, color: '#d6d0c8', marginBottom: 4 }}>
+                  {s.title} — {s.trigger}
+                </Text>
+              ))
+            )}
+          </View>
+        )}
 
         {reminders.length === 0 ? (
           <View style={{ alignItems: 'center', paddingTop: 60, paddingHorizontal: 20 }}>
