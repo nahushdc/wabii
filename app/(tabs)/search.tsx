@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Pressable, FlatList, ActivityIndicator, ScrollView, Modal } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
@@ -23,10 +23,10 @@ type WeeklyDigestSummary = { id: string; week_start: string; seen_at: string | n
 // Alternating pastel + slight rotation for each mini weekly card, so the row
 // reads like a little scattered stack of notes rather than a rigid list.
 const WEEKLY_CARD_STYLES = [
-  { bg: '#E6F3E0', accent: '#3F7A3F', rotate: '-3deg' },
-  { bg: '#FDE6DB', accent: '#C2410C', rotate: '2deg' },
-  { bg: '#EFE6FB', accent: '#6D4CAD', rotate: '-2deg' },
-  { bg: '#FCEFCF', accent: '#A87B1B', rotate: '3deg' },
+  { bg: '#CFEAC1', accent: '#2D5F2D', rotate: '-3deg' },
+  { bg: '#FBC9A8', accent: '#9A3412', rotate: '2deg' },
+  { bg: '#DDC6F5', accent: '#5B3E85', rotate: '-2deg' },
+  { bg: '#F6DD97', accent: '#8A5A0F', rotate: '3deg' },
 ];
 
 type FeedItem =
@@ -326,7 +326,7 @@ export default function SearchScreen() {
             width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center',
             shadowColor: '#5B3E85', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
           }}>
-          <Feather name="sunrise" size={20} color="#ffffff" />
+          <MaterialCommunityIcons name="brain" size={22} color="#ffffff" />
         </LinearGradient>
         <View style={{ flex: 1 }}>
           <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917' }}>
@@ -428,7 +428,8 @@ export default function SearchScreen() {
                   style={{
                     width: 118, minHeight: 96, backgroundColor: cardStyle.bg, borderRadius: 14,
                     padding: 12, transform: [{ rotate: cardStyle.rotate }],
-                    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
+                    borderWidth: 1, borderColor: 'rgba(28,25,23,0.06)',
+                    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3,
                   }}>
                   {isNew && (
                     <View style={{
@@ -437,7 +438,7 @@ export default function SearchScreen() {
                     }} />
                   )}
                   <Text style={{ fontSize: 16, marginBottom: 8 }}>🌿</Text>
-                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 11, color: cardStyle.accent, lineHeight: 15 }}>
+                  <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 12, color: cardStyle.accent, lineHeight: 16 }}>
                     {formatWeek(w.week_start)}
                   </Text>
                 </Pressable>
