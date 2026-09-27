@@ -13,10 +13,10 @@ import { WARM_BG_COLOR } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 
 const WORDMARK = 'Wabii';
-const REVEAL_MS = 900;
-const HOLD_MS = 350;
-const SETTLE_MS = 400;
-const EXPAND_MS = 650;
+const REVEAL_MS = 500;
+const HOLD_MS = 150;
+const SETTLE_MS = 220;
+const EXPAND_MS = 380;
 
 const CIRCLE_SIZE = 64;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
