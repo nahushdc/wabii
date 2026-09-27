@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   withDelay,
   withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { WARM_BG_COLOR } from '@/components/warm-background';
@@ -51,7 +52,9 @@ export function LaunchScreen({ ready, onFinished }: { ready: boolean; onFinished
     circleScale.value = withDelay(
       toSettle,
       withSequence(
-        withTiming(1, { duration: SETTLE_MS }),
+        // A snappy pop with a touch of overshoot reads as more energetic
+        // than an eased-in timing curve for the same duration.
+        withSpring(1, { damping: 14, stiffness: 300, mass: 0.5 }),
         withTiming(COVER_SCALE, { duration: EXPAND_MS, easing: Easing.in(Easing.cubic) }, finished => {
           if (finished) runOnJS(setExpandComplete)(true);
         })
