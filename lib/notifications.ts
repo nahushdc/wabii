@@ -2,11 +2,20 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
-export async function registerForPushNotifications(userId: string) {
+export type PushRegistrationResult = { success: true } | { success: false; error: string };
+
+export async function registerForPushNotifications(userId: string): Promise<PushRegistrationResult> {
   try {
+    // email is NOT NULL on users — harmless to re-write on an UPDATE, but
+    // required if this upsert ever has to INSERT (e.g. no row yet for this
+    // id), which a bare {id, timezone}/{id, push_token} payload can't satisfy.
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const email = authUser?.email;
+
     // Save timezone regardless of notification support
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    await supabase.from('users').upsert({ id: userId, timezone });
+    const { error: tzErr } = await supabase.from('users').upsert({ id: userId, email, timezone });
+    if (tzErr) return { success: false, error: `Couldn't save timezone: ${tzErr.message}` };
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -16,20 +25,22 @@ export async function registerForPushNotifications(userId: string) {
       finalStatus = status;
     }
 
-    if (finalStatus !== 'granted') return;
+    if (finalStatus !== 'granted') return { success: false, error: `Notification permission is "${finalStatus}", not granted.` };
 
-    // getExpoPushTokenAsync requires a projectId — only works in production builds
-    // Skip silently in Expo Go
+    // getExpoPushTokenAsync requires a projectId — only works in production builds,
+    // not Expo Go. Surface the real error instead of swallowing it, since a
+    // silent failure here is otherwise impossible to diagnose from a device.
     let token: string | null = null;
     try {
-      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000));
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timed out waiting for a push token.')), 8000));
       const tokenData = await Promise.race([Notifications.getExpoPushTokenAsync(), timeout]);
       token = tokenData.data;
-    } catch {
-      return; // Expo Go, offline, or timed out — skip token registration
+    } catch (e: any) {
+      return { success: false, error: e?.message ?? 'Could not get a push token.' };
     }
 
-    await supabase.from('users').upsert({ id: userId, push_token: token, timezone });
+    const { error: upsertErr } = await supabase.from('users').upsert({ id: userId, email, push_token: token, timezone });
+    if (upsertErr) return { success: false, error: `Got a push token but couldn't save it: ${upsertErr.message}` };
 
     if (Platform.OS === 'android') {
       Notifications.setNotificationChannelAsync('default', {
@@ -37,7 +48,9 @@ export async function registerForPushNotifications(userId: string) {
         importance: Notifications.AndroidImportance.MAX,
       });
     }
-  } catch (e) {
-    console.log('Push notification setup error:', e);
+
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? 'Unknown error.' };
   }
 }

@@ -1,9 +1,13 @@
 import { useState, useCallback } from 'react';
-import { View, Text, Pressable, Switch, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Alert, ScrollView, Linking } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { ReliableSwitch } from '@/components/reliable-switch';
+import { registerForPushNotifications } from '@/lib/notifications';
+import { scheduleReminderOccurrences, cancelAllForReminder } from '@/lib/reminder-notifications';
 
 type Reminder = {
   id: string;
@@ -40,6 +44,39 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState(true);
   const [notifyRequested, setNotifyRequested] = useState(false);
   const [notifyLoading, setNotifyLoading] = useState(false);
+  // null while unknown/checking, so the banner doesn't flash on before we know.
+  const [pushStatus, setPushStatus] = useState<'granted' | 'denied' | 'undetermined' | null>(null);
+  const [hasPushToken, setHasPushToken] = useState<boolean | null>(null);
+  const [pushEnabling, setPushEnabling] = useState(false);
+  const [pushError, setPushError] = useState('');
+
+  async function checkPushStatus() {
+    const { status } = await Notifications.getPermissionsAsync();
+    setPushStatus(status as 'granted' | 'denied' | 'undetermined');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from('users').select('push_token').eq('id', user.id).single();
+    setHasPushToken(!!data?.push_token);
+  }
+
+  async function handleEnablePush() {
+    if (pushEnabling) return;
+    if (pushStatus === 'denied') {
+      // requestPermissionsAsync won't re-prompt once denied — only the OS
+      // settings screen can flip it back.
+      Linking.openSettings();
+      return;
+    }
+    setPushEnabling(true);
+    setPushError('');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const result = await registerForPushNotifications(user.id);
+      if (!result.success) setPushError(result.error);
+    }
+    await checkPushStatus();
+    setPushEnabling(false);
+  }
 
   async function fetchReminders() {
     const { data } = await supabase
@@ -65,7 +102,7 @@ export default function NotificationsScreen() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      Promise.all([fetchReminders(), fetchNotifyRequested()]).finally(() => setLoading(false));
+      Promise.all([fetchReminders(), fetchNotifyRequested(), checkPushStatus()]).finally(() => setLoading(false));
     }, [])
   );
 
@@ -83,6 +120,7 @@ export default function NotificationsScreen() {
   async function toggleEnabled(reminder: Reminder, value: boolean) {
     setReminders(prev => prev.map(r => (r.id === reminder.id ? { ...r, enabled: value } : r)));
     await supabase.from('reminders').update({ enabled: value }).eq('id', reminder.id);
+    await scheduleReminderOccurrences({ ...reminder, enabled: value });
   }
 
   function handleDelete(reminder: Reminder) {
@@ -92,6 +130,7 @@ export default function NotificationsScreen() {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
           await supabase.from('reminders').delete().eq('id', reminder.id);
+          await cancelAllForReminder(reminder.id);
           setReminders(prev => prev.filter(r => r.id !== reminder.id));
         },
       },
@@ -121,6 +160,44 @@ export default function NotificationsScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 24 }}>
+        {(pushStatus === 'denied' || pushStatus === 'undetermined' || (pushStatus === 'granted' && hasPushToken === false)) && (
+          <View style={{ marginBottom: 16 }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12,
+              backgroundColor: '#fff1f0', borderRadius: 16, padding: 16,
+            }}>
+              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="bell-off" size={15} color="#ef4444" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#1c1917', marginBottom: 2 }}>
+                  Notifications aren't enabled
+                </Text>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#78716c', lineHeight: 17 }}>
+                  {pushStatus === 'denied'
+                    ? "You'll need to turn this on in Settings for reminders to reach you."
+                    : pushStatus === 'granted'
+                    ? "Permission's on, but we couldn't save your device — tap to retry."
+                    : "Reminders below won't reach you until this is on."}
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleEnablePush}
+                disabled={pushEnabling}
+                style={{ backgroundColor: '#ef4444', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
+                {pushEnabling
+                  ? <ActivityIndicator size="small" color="#ffffff" />
+                  : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: '#ffffff' }}>{pushStatus === 'denied' ? 'Settings' : 'Enable'}</Text>}
+              </Pressable>
+            </View>
+            {pushError ? (
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: '#ef4444', marginTop: 8, marginLeft: 4 }}>
+                {pushError}
+              </Text>
+            ) : null}
+          </View>
+        )}
+
         <View style={{
           backgroundColor: '#2A2530', borderRadius: 18, padding: 20, marginBottom: 20,
         }}>
@@ -196,7 +273,7 @@ export default function NotificationsScreen() {
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Switch
+                <ReliableSwitch
                   value={reminder.enabled}
                   onValueChange={v => toggleEnabled(reminder, v)}
                   trackColor={{ false: '#e7e5e4', true: '#F5C7B0' }}

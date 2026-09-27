@@ -1,10 +1,48 @@
-import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, Text, TextInput, Pressable, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Alert, Keyboard } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
+import { useLiveTranscription } from '@/hooks/use-live-transcription';
+
+function formatDuration(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function KeyboardDismissButton() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  if (!visible) return null;
+  return (
+    <View style={{ alignItems: 'flex-end', paddingHorizontal: 24, paddingBottom: 10 }}>
+      <Pressable
+        onPress={() => Keyboard.dismiss()}
+        hitSlop={10}
+        style={{
+          width: 40, height: 40, borderRadius: 20, backgroundColor: '#ffffff',
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+        }}>
+        <Feather name="chevron-down" size={20} color="#78716c" />
+      </Pressable>
+    </View>
+  );
+}
 
 type Entry = {
   id: string;
@@ -35,6 +73,22 @@ export default function EntryDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const dictationBaseRef = useRef('');
+  const { isRecording: isDictating, connecting: dictationConnecting, interimText, error: dictationError, durationMs, start: startDictationEngine, stop: stopDictationEngine } = useLiveTranscription({
+    onFinalTranscript: (sessionTranscript) => {
+      const base = dictationBaseRef.current;
+      setContent(`${base}${base && sessionTranscript ? ' ' : ''}${sessionTranscript}`.trim());
+    },
+  });
+
+  async function startDictation() {
+    dictationBaseRef.current = content;
+    await startDictationEngine();
+  }
+
+  async function stopDictation() {
+    await stopDictationEngine();
+  }
 
   useEffect(() => {
     async function fetchEntry() {
@@ -124,10 +178,18 @@ export default function EntryDetailScreen() {
         <View style={{ flexDirection: 'row', gap: 16 }}>
           {editing ? (
             <>
-              <Pressable onPress={() => { setEditing(false); setContent(entry.content); setEditTags(tags.map(t => ({ name: t.name, category: t.category }))); }} style={{ padding: 4 }}>
+              <Pressable
+                onPress={isDictating ? stopDictation : startDictation}
+                disabled={dictationConnecting}
+                style={{ padding: 4 }}>
+                {dictationConnecting
+                  ? <ActivityIndicator size="small" color="#a8a29e" />
+                  : <Feather name={isDictating ? 'square' : 'mic'} size={20} color={isDictating ? '#ef4444' : '#78716c'} />}
+              </Pressable>
+              <Pressable onPress={() => { setEditing(false); setContent(entry.content); setEditTags(tags.map(t => ({ name: t.name, category: t.category }))); }} style={{ padding: 4 }} disabled={isDictating}>
                 <Feather name="x" size={22} color="#a8a29e" />
               </Pressable>
-              <Pressable onPress={handleSave} style={{ padding: 4 }} disabled={saving}>
+              <Pressable onPress={handleSave} style={{ padding: 4 }} disabled={saving || isDictating}>
                 {saving
                   ? <ActivityIndicator size="small" color="#E85D2C" />
                   : <Feather name="check" size={22} color="#E85D2C" />}
@@ -149,37 +211,75 @@ export default function EntryDetailScreen() {
         </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
-        {/* Date */}
-        <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
-          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#b07d4a' }}>
-            {formatDate(entry.created_at)}
-          </Text>
-        </View>
-
-        {error ? (
-          <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
-            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
+      {editing ? (
+        <View style={{ flex: 1 }}>
+          <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#b07d4a' }}>
+              {formatDate(entry.created_at)}
+            </Text>
           </View>
-        ) : null}
 
-        {editing ? (
-          <View>
+          {(error || dictationError) ? (
+            <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || dictationError}</Text>
+            </View>
+          ) : null}
+
+          {isDictating && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 24, marginBottom: 12 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444' }} />
+              <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#78716c' }}>
+                Listening… {formatDuration(durationMs)}
+              </Text>
+            </View>
+          )}
+
+          {/* A bounded, flex:1 multiline input handles its own internal
+              scrolling natively — an unbounded auto-growing one inside a
+              ScrollView can't be dragged to scroll once it fills the screen.
+              While dictating, content updates live from speech, so it's shown
+              as read-only text instead of an editable field — editing it
+              mid-dictation would fight with the incoming transcript. */}
+          {isDictating ? (
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 8 }}>
+              <Text style={{ fontSize: 18, fontFamily: 'Inter_400Regular', color: '#1c1917', lineHeight: 30 }}>
+                {content}
+                {interimText ? <Text style={{ color: '#a8a29e' }}>{content ? ' ' : ''}{interimText}</Text> : null}
+              </Text>
+            </ScrollView>
+          ) : (
             <TextInput
               style={{
+                flex: 1,
                 paddingHorizontal: 24, paddingVertical: 8,
                 fontSize: 18, fontFamily: 'Inter_400Regular',
                 color: '#1c1917', lineHeight: 30,
-                minHeight: 300, textAlignVertical: 'top',
+                textAlignVertical: 'top',
               }}
               value={content}
               onChangeText={setContent}
               multiline
               autoFocus
             />
-            <TagPicker selected={editTags} onChange={setEditTags} />
+          )}
+          <TagPicker selected={editTags} onChange={setEditTags} />
+          <KeyboardDismissButton />
+        </View>
+      ) : (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
+          {/* Date */}
+          <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: '#b07d4a' }}>
+              {formatDate(entry.created_at)}
+            </Text>
           </View>
-        ) : (
+
+          {error ? (
+            <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
+            </View>
+          ) : null}
+
           <Text style={{
             paddingHorizontal: 24, paddingBottom: 24,
             fontSize: 18, fontFamily: 'Inter_400Regular',
@@ -187,21 +287,21 @@ export default function EntryDetailScreen() {
           }}>
             {entry.content}
           </Text>
-        )}
 
-        {/* Tags */}
-        {tags.length > 0 && (
-          <View style={{ paddingHorizontal: 24, paddingBottom: 40, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {tags.map(tag => (
-              <View
-                key={tag.id}
-                style={{ backgroundColor: '#f0ebe3', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 }}>
-                <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#78716c' }}>{tag.name}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </ScrollView>
+          {/* Tags */}
+          {tags.length > 0 && (
+            <View style={{ paddingHorizontal: 24, paddingBottom: 40, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {tags.map(tag => (
+                <View
+                  key={tag.id}
+                  style={{ backgroundColor: '#f0ebe3', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 }}>
+                  <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#78716c' }}>{tag.name}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      )}
     </KeyboardAvoidingView>
     </WarmBackground>
   );

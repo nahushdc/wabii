@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "wabii-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web"],
+      "port": 8081
+    },
+    {
+      "name": "ndc-site-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "/Users/hellofi/Documents/Sites/ndc-site", "run", "dev"],
+      "port": 4321,
+      "autoPort": true
+    }
+  ]
+}

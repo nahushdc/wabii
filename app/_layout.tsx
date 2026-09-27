@@ -1,5 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
@@ -8,9 +7,11 @@ import '../global.css';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { registerForPushNotifications } from '@/lib/notifications';
-import { Platform } from 'react-native';
+import { syncAllReminderNotifications } from '@/lib/reminder-notifications';
+import { Platform, AppState, AppStateStatus } from 'react-native';
 import { WarmBackground } from '@/components/warm-background';
 import { LaunchScreen } from '@/components/launch-screen';
+import { AppLockScreen } from '@/components/app-lock-screen';
 import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
 import {
@@ -21,7 +22,7 @@ import {
 } from '@expo-google-fonts/inter';
 
 const PUBLIC_ROUTES = ['log-in', 'sign-up', 'forgot-password', 'reset-password'];
-const PRIVATE_ROUTES = ['profile', 'entry', 'digest', 'monthly-digest', 'notifications', 'export', 'therapist-invite', 'chat', 'reminder', 'onboarding', 'prompt-themes', 'prompt-theme', 'theme-insight', 'search-overlay', 'search-onboarding', 'pursuits-onboarding', 'reflection-settings', 'help'];
+const PRIVATE_ROUTES = ['profile', 'entry', 'digest', 'monthly-digest', 'notifications', 'export', 'therapist-invite', 'chat', 'reminder', 'onboarding', 'prompt-themes', 'prompt-theme', 'theme-insight', 'search-overlay', 'search-onboarding', 'pursuits-onboarding', 'reflection-settings', 'app-lock', 'help'];
 
 const OnboardingContext = createContext<(complete: boolean) => void>(() => {});
 export function useSetOnboardingComplete() {
@@ -55,8 +56,27 @@ function AuthGuard({ session, onboardingComplete }: { session: Session | null | 
 }
 
 async function loadOnboardingComplete(userId: string): Promise<boolean> {
-  const { data } = await supabase.from('users').select('onboarding_complete').eq('id', userId).single();
+  const { data } = await supabase.from('users').select('onboarding_complete, force_onboarding').eq('id', userId).single();
+  // force_onboarding is a persistent testing switch — while it's on,
+  // onboarding shows every launch regardless of whether it's actually been
+  // completed, so it doesn't "stick" as done the moment you finish it once.
+  if (data?.force_onboarding === true) return false;
   return data?.onboarding_complete === true;
+}
+
+type AppLockSettings = { enabled: boolean; hash: string | null; salt: string | null };
+
+async function loadAppLockSettings(userId: string): Promise<AppLockSettings> {
+  const { data } = await supabase
+    .from('users')
+    .select('app_lock_enabled, app_lock_pin_hash, app_lock_pin_salt')
+    .eq('id', userId)
+    .single();
+  return {
+    enabled: data?.app_lock_enabled === true && !!data?.app_lock_pin_hash && !!data?.app_lock_pin_salt,
+    hash: data?.app_lock_pin_hash ?? null,
+    salt: data?.app_lock_pin_salt ?? null,
+  };
 }
 
 function handleNotificationResponse(router: ReturnType<typeof useRouter>, response: Notifications.NotificationResponse) {
@@ -94,6 +114,9 @@ export default function RootLayout() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | undefined>(undefined);
   const [showLaunch, setShowLaunch] = useState(true);
+  const [appLock, setAppLock] = useState<AppLockSettings | undefined>(undefined);
+  const [locked, setLocked] = useState(true);
+  const appStateRef = useRef(AppState.currentState);
   const router = useRouter();
   const navigationState = useRootNavigationState();
 
@@ -112,9 +135,17 @@ export default function RootLayout() {
         setOnboardingComplete(complete);
         // Already-onboarded users keep getting registered automatically on app open,
         // as before. New users get this deferred to the end of the onboarding flow.
-        if (complete) registerForPushNotifications(session.user.id);
+        if (complete) {
+          registerForPushNotifications(session.user.id);
+          syncAllReminderNotifications();
+        }
+        const lock = await loadAppLockSettings(session.user.id);
+        setAppLock(lock);
+        setLocked(lock.enabled);
       } else {
         setOnboardingComplete(undefined);
+        setAppLock(undefined);
+        setLocked(false);
       }
     });
 
@@ -126,34 +157,69 @@ export default function RootLayout() {
       if (event === 'SIGNED_IN' && session?.user?.id) {
         const complete = await loadOnboardingComplete(session.user.id);
         setOnboardingComplete(complete);
-        if (complete) registerForPushNotifications(session.user.id);
+        if (complete) {
+          registerForPushNotifications(session.user.id);
+          syncAllReminderNotifications();
+        }
+        const lock = await loadAppLockSettings(session.user.id);
+        setAppLock(lock);
+        setLocked(lock.enabled);
       }
       if (event === 'SIGNED_OUT') {
         setOnboardingComplete(undefined);
+        setAppLock(undefined);
+        setLocked(false);
       }
     });
 
     return () => subscription.unsubscribe();
   }, [navigationState?.key]);
 
+  // Simple app lock: re-lock the instant the app leaves the foreground, so
+  // returning from the background (or a cold relaunch) always asks for the
+  // PIN again rather than trusting a grace period.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (appStateRef.current === 'active' && next !== 'active' && appLock?.enabled) {
+        setLocked(true);
+      }
+      // Local reminder notifications are only scheduled a rolling window
+      // ahead — top it up on every foreground so a long-backgrounded app
+      // doesn't run out of upcoming occurrences.
+      if (appStateRef.current !== 'active' && next === 'active' && session && onboardingComplete) {
+        syncAllReminderNotifications();
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
+  }, [appLock?.enabled, session, onboardingComplete]);
+
   if (!fontsLoaded) {
     return <WarmBackground />;
   }
 
   return (
-    <ThemeProvider value={DefaultTheme}>
-      <OnboardingContext.Provider value={setOnboardingComplete}>
-        <AuthGuard session={session} onboardingComplete={onboardingComplete} />
-        <NotificationDeepLinkHandler />
-        <Stack screenOptions={{ headerShown: false }} />
-        <StatusBar style="dark" />
-        {showLaunch && (
-          <LaunchScreen
-            ready={session !== undefined}
-            onFinished={() => setShowLaunch(false)}
-          />
-        )}
-      </OnboardingContext.Provider>
-    </ThemeProvider>
+    <OnboardingContext.Provider value={setOnboardingComplete}>
+      <AuthGuard session={session} onboardingComplete={onboardingComplete} />
+      <NotificationDeepLinkHandler />
+      <Stack screenOptions={{ headerShown: false }} />
+      <StatusBar style="dark" />
+      {session && appLock?.enabled && locked && appLock.hash && appLock.salt && (
+        <AppLockScreen
+          pinHash={appLock.hash}
+          pinSalt={appLock.salt}
+          onUnlock={(newHash, newSalt) => {
+            if (newHash && newSalt) setAppLock({ enabled: true, hash: newHash, salt: newSalt });
+            setLocked(false);
+          }}
+        />
+      )}
+      {showLaunch && (
+        <LaunchScreen
+          ready={session !== undefined}
+          onFinished={() => setShowLaunch(false)}
+        />
+      )}
+    </OnboardingContext.Provider>
   );
 }

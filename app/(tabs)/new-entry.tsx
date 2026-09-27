@@ -6,12 +6,13 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useAudioRecorder, useAudioRecorderState, useAudioPlayer, useAudioPlayerStatus, RecordingPresets, AudioModule, setAudioModeAsync } from 'expo-audio';
-import * as FileSystem from 'expo-file-system/legacy';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
+import { useLiveTranscription } from '@/hooks/use-live-transcription';
+import { cancelTodaysReminderOccurrencesIfJournaled } from '@/lib/reminder-notifications';
 
 type Mode = 'text' | 'voice';
 
@@ -40,7 +41,7 @@ function TextComposer({
   const wordCount = content.trim() === '' ? 0 : content.trim().split(/\s+/).length;
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+    <View style={{ flex: 1 }}>
       {/* Prompt mode */}
       {activeThemeId && prompts.length > 0 ? (
         <View style={{
@@ -85,13 +86,20 @@ function TextComposer({
         )
       )}
 
-      {/* Writing area */}
+      {/* Writing area — a bounded, flex:1 multiline input handles its own
+          internal scrolling natively, which correctly responds to drag
+          gestures over the text and keeps the cursor in view while typing.
+          An unbounded auto-growing TextInput inside an outer ScrollView
+          can't be dragged to scroll once it fills the screen, since the
+          drag gesture is captured by the TextInput for cursor placement
+          instead of reaching the ScrollView. */}
       <TextInput
         style={{
+          flex: 1,
           paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16,
           fontSize: 18, fontFamily: 'Inter_400Regular',
           color: '#1c1917', lineHeight: 30,
-          minHeight: 280, textAlignVertical: 'top',
+          textAlignVertical: 'top',
         }}
         placeholder="What's on your mind today?"
         placeholderTextColor="#c4b9b0"
@@ -108,7 +116,7 @@ function TextComposer({
           {wordCount} {wordCount === 1 ? 'word' : 'words'}
         </Text>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -116,181 +124,122 @@ function TextComposer({
 
 function VoiceComposer({ transcript, setTranscript }: { transcript: string; setTranscript: (v: string) => void }) {
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const recorderState = useAudioRecorderState(audioRecorder, 200);
   const player = useAudioPlayer(recordedUri ?? undefined);
   const playerStatus = useAudioPlayerStatus(player);
-  const [transcribing, setTranscribing] = useState(false);
+  const { isRecording, connecting, interimText, error: liveError, durationMs, start, stop } = useLiveTranscription({
+    onFinalTranscript: setTranscript,
+  });
   const [error, setError] = useState('');
 
   async function startRecording() {
     setError('');
-    try {
-      const { granted } = await AudioModule.requestRecordingPermissionsAsync();
-      if (!granted) { setError('Microphone access is needed to record.'); return; }
-      // The audio session doesn't allow recording by default — without this,
-      // record() silently captures nothing.
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      setRecordedUri(null);
-      setTranscript('');
-      await audioRecorder.prepareToRecordAsync();
-      audioRecorder.record();
-    } catch (e: any) {
-      setError(e?.message ?? 'Could not start recording.');
-    }
+    setRecordedUri(null);
+    setTranscript('');
+    await start();
   }
 
   async function stopRecording() {
-    try {
-      await audioRecorder.stop();
-      await setAudioModeAsync({ allowsRecording: false });
-      const uri = audioRecorder.uri;
-      if (!uri) {
-        setError('No audio was captured. Try recording again.');
-        return;
-      }
-      // record() doesn't surface native start-up failures, so an empty file
-      // is the clearest sign the recorder never actually captured audio.
-      const info = await FileSystem.getInfoAsync(uri);
-      if (!info.exists || info.size === 0) {
-        setError('The recording came out empty — no audio was captured. Try again.');
-        return;
-      }
-      setRecordedUri(uri);
-    } catch (e: any) {
-      setError(e?.message ?? 'Could not finish that recording.');
-    }
-  }
-
-  async function handleTranscribe() {
-    if (!recordedUri) {
-      setError('There is no recording to transcribe yet.');
+    const result = await stop();
+    if (!result?.fileUri) {
+      setError('No audio was captured. Try recording again.');
       return;
     }
-    setError('');
-    setTranscribing(true);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const form = new FormData();
-    form.append('audio', {
-      uri: recordedUri,
-      name: 'recording.m4a',
-      type: 'audio/m4a',
-    } as any);
-
-    try {
-      const res = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/transcribe-voice`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-        body: form,
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error ?? 'Transcription failed.');
-      setTranscript(result.text ?? '');
-    } catch (e: any) {
-      setError(e.message ?? 'Could not transcribe that recording.');
-    }
-    setTranscribing(false);
+    setRecordedUri(result.fileUri);
   }
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 24 }}>
       <View style={{ alignItems: 'center', paddingVertical: 20 }}>
         <Pressable
-          onPress={recorderState.isRecording ? stopRecording : startRecording}
+          onPress={isRecording ? stopRecording : startRecording}
+          disabled={connecting}
           style={{
             width: 96, height: 96, borderRadius: 48,
-            backgroundColor: recorderState.isRecording ? '#ef4444' : COLORS.primary,
+            backgroundColor: isRecording ? '#ef4444' : connecting ? '#e7e5e4' : COLORS.primary,
             alignItems: 'center', justifyContent: 'center',
             shadowColor: '#1c1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 6,
           }}>
-          <Feather name={recorderState.isRecording ? 'square' : 'mic'} size={34} color="#ffffff" />
+          {connecting
+            ? <ActivityIndicator color="#a8a29e" size="small" />
+            : <Feather name={isRecording ? 'square' : 'mic'} size={34} color="#ffffff" />}
         </Pressable>
         <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 18, color: '#1c1917', marginTop: 16 }}>
-          {recorderState.isRecording ? formatDuration(recorderState.durationMillis) : recordedUri ? 'Recording ready' : 'Tap to record'}
+          {connecting ? 'Connecting…' : isRecording ? formatDuration(durationMs) : recordedUri ? 'Recording ready' : 'Tap to record'}
         </Text>
         <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e', marginTop: 4, textAlign: 'center' }}>
-          {recorderState.isRecording
-            ? 'Speak freely — tap the square to stop.'
+          {isRecording
+            ? 'Speak freely — your words appear below as you talk.'
             : recordedUri
-            ? 'Play it back, re-record, or transcribe it into your entry.'
-            : 'Record your thoughts out loud.'}
+            ? 'Play it back, re-record, or edit the transcript below.'
+            : 'Record your thoughts out loud — transcribed live as you speak.'}
         </Text>
       </View>
 
-      {recordedUri && !recorderState.isRecording && (
-        <View style={{ gap: 10, marginBottom: 20 }}>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable
-              onPress={() => {
-                if (playerStatus.isLoaded && playerStatus.duration === 0) {
-                  setError('This recording has no audio in it, so it can\'t be played back.');
-                  return;
-                }
-                player.playing ? player.pause() : player.play();
-              }}
-              style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
-                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-              }}>
-              <Feather name={player.playing ? 'pause' : 'play'} size={16} color="#1c1917" />
-              <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>
-                {player.playing ? 'Pause' : 'Play'}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={startRecording}
-              style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
-                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-              }}>
-              <Feather name="rotate-ccw" size={16} color="#1c1917" />
-              <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>Re-record</Text>
-            </Pressable>
-          </View>
-
+      {recordedUri && !isRecording && (
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
           <Pressable
-            onPress={handleTranscribe}
-            disabled={transcribing}
+            onPress={() => {
+              if (playerStatus.isLoaded && playerStatus.duration === 0) {
+                setError('This recording has no audio in it, so it can\'t be played back.');
+                return;
+              }
+              player.playing ? player.pause() : player.play();
+            }}
             style={{
-              backgroundColor: transcribing ? '#e7e5e4' : COLORS.primary,
-              borderRadius: 14, paddingVertical: 14, alignItems: 'center',
-              flexDirection: 'row', justifyContent: 'center', gap: 8,
+              flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+              backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
+              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
             }}>
-            {transcribing
-              ? <ActivityIndicator color="white" size="small" />
-              : <>
-                  <Feather name="type" size={16} color="white" />
-                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#ffffff' }}>Transcribe into entry</Text>
-                </>}
+            <Feather name={player.playing ? 'pause' : 'play'} size={16} color="#1c1917" />
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>
+              {player.playing ? 'Pause' : 'Play'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={startRecording}
+            style={{
+              flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+              backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
+              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+            }}>
+            <Feather name="rotate-ccw" size={16} color="#1c1917" />
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>Re-record</Text>
           </Pressable>
         </View>
       )}
 
-      {error ? (
+      {(error || liveError) ? (
         <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 16 }}>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || liveError}</Text>
         </View>
       ) : null}
 
-      {transcript ? (
+      {(transcript || interimText || isRecording) ? (
         <View style={{ marginBottom: 24 }}>
           <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 8 }}>
             Transcript
           </Text>
-          <TextInput
-            style={{
-              backgroundColor: '#ffffff', borderRadius: 16, padding: 16,
-              fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24,
-              minHeight: 120, textAlignVertical: 'top',
-              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-            }}
-            value={transcript}
-            onChangeText={setTranscript}
-            multiline
-          />
+          <View style={{
+            backgroundColor: '#ffffff', borderRadius: 16, padding: 16, minHeight: 120,
+            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+          }}>
+            {isRecording ? (
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24 }}>
+                {transcript}
+                {interimText ? <Text style={{ color: '#a8a29e' }}>{transcript ? ' ' : ''}{interimText}</Text> : null}
+              </Text>
+            ) : (
+              <TextInput
+                style={{
+                  fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24,
+                  textAlignVertical: 'top',
+                }}
+                value={transcript}
+                onChangeText={setTranscript}
+                multiline
+              />
+            )}
+          </View>
         </View>
       ) : null}
     </ScrollView>
@@ -474,6 +423,11 @@ export default function NewEntryScreen() {
     supabase.functions.invoke('embed-entry', {
       body: { entry_id: entry.id, content: finalContent },
     });
+
+    // Only after the entry is actually saved — cancel today's reminder(s)
+    // for skip_if_journaled, not before, so a save that fails partway
+    // through still leaves the reminder in place.
+    cancelTodaysReminderOccurrencesIfJournaled();
 
     setLoading(false);
     router.replace('/(tabs)');

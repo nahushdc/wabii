@@ -21,6 +21,7 @@ const MAPPING = {
   'book.fill': 'book',
   'magnifyingglass': 'search',
   'sparkles': 'auto-awesome',
+  'brain.head.profile': 'psychology',
   'person.crop.circle': 'account-circle',
 } as IconMapping;
 

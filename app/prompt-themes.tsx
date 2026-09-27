@@ -208,12 +208,7 @@ export default function PromptThemesScreen() {
         <Pressable onPress={() => router.back()} style={{ padding: 4, marginRight: 12 }}>
           <Feather name="arrow-left" size={22} color="#374151" />
         </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917' }}>Pursuits</Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#a8a29e', marginTop: 1 }}>
-            Formerly Self-Awareness Themes
-          </Text>
-        </View>
+        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917', flex: 1 }}>Pursuits</Text>
         <Pressable onPress={() => router.push('/prompt-theme/new')} style={{ padding: 4 }}>
           <Feather name="plus" size={22} color="#E85D2C" />
         </Pressable>

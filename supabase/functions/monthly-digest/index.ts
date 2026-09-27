@@ -11,10 +11,93 @@ const anthropic = new Anthropic({
   apiKey: Deno.env.get('ANTHROPIC_API_KEY')!,
 });
 
-// Push notifications for the monthly reflection are built but switched off
-// until the app has actually shipped to the App Store — flipping this to
-// true is the only change needed once that's done.
-const NOTIFICATIONS_ENABLED = false;
+const NOTIFICATIONS_ENABLED = true;
+
+type PatternEntry = { pattern: string; count: number };
+type DigestInsights = {
+  moods: string[];
+  new_patterns: string[];
+  repeating_patterns: PatternEntry[];
+  attention_patterns: PatternEntry[];
+};
+
+function sanitizePatternEntries(value: unknown): PatternEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((p): p is { pattern: unknown; count: unknown } => p && typeof p === 'object')
+    .map(p => ({
+      pattern: String((p as any).pattern ?? '').trim(),
+      count: Math.max(2, Math.round(Number((p as any).count) || 2)),
+    }))
+    .filter(p => p.pattern.length > 0)
+    .slice(0, 8);
+}
+
+function parseInsightsJson(raw: string): DigestInsights | null {
+  const cleaned = raw.replace(/```json\s*|```\s*/g, '').trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    return {
+      moods: Array.isArray(parsed.moods) ? parsed.moods.slice(0, 8) : [],
+      new_patterns: Array.isArray(parsed.new_patterns) ? parsed.new_patterns.slice(0, 8) : [],
+      repeating_patterns: sanitizePatternEntries(parsed.repeating_patterns),
+      attention_patterns: sanitizePatternEntries(parsed.attention_patterns),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function generateInsights(
+  entriesText: string,
+  previousInsights: DigestInsights | null,
+  periodLabel: string,
+): Promise<DigestInsights | null> {
+  const knownPatterns: PatternEntry[] = previousInsights
+    ? [
+        ...previousInsights.new_patterns.map(pattern => ({ pattern, count: 1 })),
+        ...previousInsights.repeating_patterns,
+        ...previousInsights.attention_patterns.filter(a => !previousInsights.repeating_patterns.some(r => r.pattern === a.pattern)),
+      ]
+    : [];
+
+  const previousPatternsSection = knownPatterns.length
+    ? `\n\nPatterns identified in PREVIOUS periods, with how many consecutive periods (including that one) each has been observed so far — use this to decide "new" vs "repeating" below, and to set each repeating/attention pattern's count to (its previous count + 1) if it genuinely still shows up this period:\n${knownPatterns.map(p => `- "${p.pattern}" (seen ${p.count}x so far)`).join('\n')}`
+    : '\n\nThere is no previous period to compare against — treat every genuine pattern you find as new, with no counts to carry forward.';
+
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5',
+    max_tokens: 900,
+    messages: [
+      {
+        role: 'user',
+        content: `Analyze these journal entries from the past ${periodLabel} and return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
+
+{
+  "moods": string[],
+  "new_patterns": string[],
+  "repeating_patterns": [{"pattern": string, "count": number}],
+  "attention_patterns": [{"pattern": string, "count": number}]
+}
+
+Rules:
+- "moods": 2-6 single words or short phrases naming the emotional tones actually present across these entries (e.g. "anxious", "hopeful", "overwhelmed"). Be specific and varied, not generic.
+- "new_patterns": short (under 12 words) descriptions of genuine behavioral/emotional/thought patterns that appear for the FIRST time this period. Plain strings, no count (a new pattern is implicitly 1x).
+- "repeating_patterns": patterns that were also present in a previous period AND still genuinely show up here. Each is {"pattern": short description, "count": previous count + 1}. Reuse the SAME wording as the previous pattern when it's the same pattern, so it can be matched — only rephrase if the pattern itself has evolved.
+- "attention_patterns": a SUBSET of repeating_patterns (same {"pattern","count"} shape, same count) for ones that seem stuck, avoided, or causing ongoing distress — worth gently flagging. Do not diagnose. Leave empty if nothing genuinely warrants it.
+- Every pattern must be grounded in the actual entries below — never invent one, and never carry a previous pattern forward if it doesn't genuinely appear this period. If there's too little material, return shorter or empty arrays rather than padding them.
+- Keep each pattern description short enough to show as a single line in a UI.
+${previousPatternsSection}
+
+Journal entries:
+${entriesText}`,
+      },
+    ],
+  });
+
+  const raw = message.content[0].type === 'text' ? message.content[0].text : '';
+  return parseInsightsJson(raw);
+}
 
 function isLastDayOfUtcMonth(now: Date): boolean {
   const tomorrow = new Date(now);
@@ -27,6 +110,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const targetUserId = body?.user_id ?? null;
     const force = body?.force === true; // lets us manually trigger a test run regardless of date
+    const requestedMonthStart = typeof body?.month_start === 'string' ? body.month_start : null;
 
     const now = new Date();
     if (!force && !isLastDayOfUtcMonth(now)) {
@@ -35,7 +119,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const parsedRequestedMonth = requestedMonthStart ? new Date(`${requestedMonthStart}T00:00:00.000Z`) : null;
+    if (requestedMonthStart && (!parsedRequestedMonth || Number.isNaN(parsedRequestedMonth.getTime()))) {
+      throw new Error('month_start must be a valid YYYY-MM-DD date');
+    }
+
+    // A specific month is only accepted for an explicitly forced/manual run.
+    // Scheduled runs always use the current month.
+    const monthStart = force && parsedRequestedMonth
+      ? new Date(Date.UTC(parsedRequestedMonth.getUTCFullYear(), parsedRequestedMonth.getUTCMonth(), 1))
+      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const nextMonthStart = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
     const monthStartStr = monthStart.toISOString().split('T')[0];
 
     let usersQuery = supabase.from('users').select('id, email, monthly_reflections_enabled, push_token');
@@ -67,6 +161,7 @@ Deno.serve(async (req) => {
         .select('content, created_at')
         .eq('user_id', user.id)
         .gte('created_at', monthStart.toISOString())
+        .lt('created_at', nextMonthStart.toISOString())
         .order('created_at', { ascending: true });
 
       if (monthError || !monthEntries || monthEntries.length === 0) {
@@ -94,6 +189,7 @@ Deno.serve(async (req) => {
           .select('content, created_at, prompt_theme_id')
           .eq('user_id', user.id)
           .gte('created_at', monthStart.toISOString())
+          .lt('created_at', nextMonthStart.toISOString())
           .not('prompt_theme_id', 'is', null);
 
         const byTheme: Record<string, typeof monthEntriesWithTheme> = {};
@@ -112,7 +208,7 @@ Deno.serve(async (req) => {
           return `Pursuit: "${p.name}"${p.focus ? ` (focus: ${p.focus})` : ''}\n${text}`;
         }).join('\n\n---\n\n');
 
-        pursuitsPromptSection = `\n\nThe person is also tracking these ongoing "pursuits" — standing personal questions they're deliberately exploring. Below, for each pursuit, is what (if anything) they logged against it this month specifically. After your main reflection, add a section titled exactly "Your pursuits this month" and, for each pursuit listed below, write one short line naming a genuine theme (what it seems to be about) or pattern (when/how it recurs) you can detect — grounded strictly in that pursuit's entries below, not the rest of the month. If a pursuit has no entries this month, or too little to say anything real, say so plainly (e.g. "Nothing logged this month — no pattern to report.") rather than inventing one.
+        pursuitsPromptSection = `\n\nThe person is also tracking these ongoing "pursuits" — standing personal questions they're deliberately exploring. Below, for each pursuit, is what (if anything) they logged against it this month specifically. In the "Your pursuits this month" section, write one short line naming a genuine theme (what it seems to be about) or pattern (when/how it recurs) you can detect — grounded strictly in that pursuit's entries below, not the rest of the month. If a pursuit has no entries this month, or too little to say anything real, say so plainly (e.g. "Nothing logged this month — no pattern to report.") rather than inventing one.
 
 ${pursuitBlocks}`;
       }
@@ -131,7 +227,11 @@ Your reflection should:
 - Highlight moments of growth, tension, or change — name them specifically
 - Be honest but kind — this is for the person's own reflection, not an evaluation
 - Feel like it was written by someone who actually read every word, not a summary bot
-- Be 4–6 paragraphs. No bullet points. No headers (aside from the pursuits section below, if any). Just thoughtful prose.
+- Use exactly this readable structure:
+  1. "## A month in view" followed by 2–3 short, thoughtful paragraphs.
+  2. "## Patterns I noticed" followed by 2–4 concise bullet points. Each bullet must name a recurring pattern and the context that supports it. Do not diagnose or present speculation as fact.
+  3. If pursuits are included below, add "## Your pursuits this month" followed by their short observations.
+- The patterns section is essential even if there are no pursuits. Only include patterns genuinely supported by the entries; if evidence is limited, say that gently instead of forcing a conclusion.
 ${pursuitsPromptSection}
 Journal entries:
 ${entriesText}`,
@@ -141,12 +241,24 @@ ${entriesText}`,
 
       const digestContent = message.content[0].type === 'text' ? message.content[0].text : '';
 
+      const { data: previousDigest } = await supabase
+        .from('monthly_digests')
+        .select('insights')
+        .eq('user_id', user.id)
+        .lt('month_start', monthStartStr)
+        .order('month_start', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const insights = await generateInsights(entriesText, previousDigest?.insights ?? null, 'month').catch(() => null);
+
       const { data: inserted, error: insertError } = await supabase
         .from('monthly_digests')
         .insert({
           user_id: user.id,
           content: digestContent,
           month_start: monthStartStr,
+          insights,
         })
         .select('id')
         .single();

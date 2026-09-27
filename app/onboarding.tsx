@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -12,9 +12,21 @@ import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { registerForPushNotifications } from '@/lib/notifications';
 import { COLORS } from '@/constants/colors';
+import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { useSetOnboardingComplete } from './_layout';
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+
+// Tappable starters, not exclusive categories — tapping one inserts that
+// phrase into the open field rather than "selecting" it, so the field stays
+// the source of truth and people can edit/extend from there.
+const REASON_STARTERS = [
+  "It's hard to sit with my emotions",
+  'I want to understand myself better',
+  "I'm going through something and need to process it",
+  'I just want a place to vent',
+  'My therapist recommended journaling',
+];
 
 const VALUE_PROPS = [
   { title: 'Get it out', description: 'Type it, talk it, or say it out loud.', chipBg: COLORS.primaryLight, haloBg: '#FBE3D3' },
@@ -67,9 +79,19 @@ export default function OnboardingScreen() {
   const { step } = useLocalSearchParams<{ step?: string }>();
   const isValueStep = !step;
   const isNameStep = step === 'name';
+  const isReasonsStep = step === 'reasons';
   const [loading, setLoading] = useState(false);
   const [finishingAction, setFinishingAction] = useState<'enable' | 'skip' | null>(null);
   const [name, setName] = useState('');
+  const [reasonText, setReasonText] = useState('');
+  const [reasonsSaving, setReasonsSaving] = useState(false);
+  const dictationBaseRef = useRef('');
+  const { isRecording: isDictatingReason, connecting: reasonDictationConnecting, interimText: reasonInterimText, error: reasonDictationError, start: startReasonDictation, stop: stopReasonDictation } = useLiveTranscription({
+    onFinalTranscript: (sessionTranscript) => {
+      const base = dictationBaseRef.current;
+      setReasonText(`${base}${base && sessionTranscript ? ' ' : ''}${sessionTranscript}`.trim());
+    },
+  });
   const [reminders, setReminders] = useState(() => INITIAL_REMINDERS.map(r => ({ ...r })));
   const [selectedReminders, setSelectedReminders] = useState<Set<number>>(new Set([0, 1, 2]));
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -81,6 +103,35 @@ export default function OnboardingScreen() {
       setLoading(true);
       await supabase.auth.updateUser({ data: { full_name: trimmed } });
       setLoading(false);
+    }
+    router.replace('/onboarding?step=reasons');
+  }
+
+  function insertReasonStarter(phrase: string) {
+    setReasonText(prev => {
+      const trimmed = prev.trim();
+      if (!trimmed) return phrase;
+      const needsPeriod = !/[.!?]$/.test(trimmed);
+      return `${trimmed}${needsPeriod ? '.' : ''} ${phrase}`;
+    });
+  }
+
+  async function startReasonMic() {
+    dictationBaseRef.current = reasonText;
+    await startReasonDictation();
+  }
+
+  async function saveReasons() {
+    const text = reasonText.trim();
+    if (text) {
+      setReasonsSaving(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // email is required if this upsert ever has to INSERT (no row yet for
+        // this id) — a bare {id, signup_reason} payload can't satisfy that.
+        await supabase.from('users').upsert({ id: user.id, email: user.email, signup_reason: text });
+      }
+      setReasonsSaving(false);
     }
     router.replace('/onboarding?step=welcome');
   }
@@ -120,7 +171,10 @@ export default function OnboardingScreen() {
         });
         await supabase.from('reminders').insert(rows);
       }
-      await supabase.from('users').upsert({ id: user.id, onboarding_complete: true });
+      // email is required if this upsert ever has to INSERT (no row yet for
+      // this id) — a bare {id, onboarding_complete} payload can't satisfy that.
+      const { error: upsertErr } = await supabase.from('users').upsert({ id: user.id, email: user.email, onboarding_complete: true });
+      if (upsertErr) console.warn('Failed to persist onboarding_complete:', upsertErr.message);
       // Push permission involves a native prompt the user may not respond to
       // right away — don't block finishing onboarding on it.
       if (withPermission) registerForPushNotifications(user.id);
@@ -239,7 +293,95 @@ export default function OnboardingScreen() {
               ? <ActivityIndicator color="white" />
               : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Continue</Text>}
           </Pressable>
-          <Pressable onPress={() => router.replace('/onboarding?step=welcome')} disabled={loading}>
+          <Pressable onPress={() => router.replace('/onboarding?step=reasons')} disabled={loading}>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#a8a29e' }}>Skip for now</Text>
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+      </WarmBackground>
+    );
+  }
+
+  if (isReasonsStep) {
+    const canContinue = reasonText.trim().length > 0;
+    return (
+      <WarmBackground>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 28 }}>
+          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', marginBottom: 20, textAlign: 'center' }}>
+            What made you feel like downloading this app?
+          </Text>
+
+          {(reasonDictationError) ? (
+            <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 12 }}>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{reasonDictationError}</Text>
+            </View>
+          ) : null}
+
+          <View style={{
+            backgroundColor: '#ffffff', borderRadius: 16, padding: 16, minHeight: 130, marginBottom: 14,
+            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+          }}>
+            {isDictatingReason ? (
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24 }}>
+                {reasonText}
+                {reasonInterimText ? <Text style={{ color: '#a8a29e' }}>{reasonText ? ' ' : ''}{reasonInterimText}</Text> : null}
+              </Text>
+            ) : (
+              <TextInput
+                style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24, minHeight: 70, textAlignVertical: 'top' }}
+                placeholder="e.g. It's hard to sit with my emotions, and I don't have anyone to talk to about it."
+                placeholderTextColor="#c4b9b0"
+                value={reasonText}
+                onChangeText={setReasonText}
+                multiline
+              />
+            )}
+
+            <Pressable
+              onPress={isDictatingReason ? stopReasonDictation : startReasonMic}
+              disabled={reasonDictationConnecting}
+              style={{
+                alignSelf: 'flex-end', marginTop: 8,
+                width: 40, height: 40, borderRadius: 20,
+                backgroundColor: isDictatingReason ? '#ef4444' : reasonDictationConnecting ? '#e7e5e4' : '#f7f4ef',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+              {reasonDictationConnecting
+                ? <ActivityIndicator size="small" color="#a8a29e" />
+                : <Feather name={isDictatingReason ? 'square' : 'mic'} size={17} color={isDictatingReason ? '#ffffff' : '#78716c'} />}
+            </Pressable>
+          </View>
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            {REASON_STARTERS.map(phrase => (
+              <Pressable
+                key={phrase}
+                onPress={() => insertReasonStarter(phrase)}
+                disabled={isDictatingReason}
+                style={{
+                  backgroundColor: '#ffffff', borderRadius: 20, paddingHorizontal: 13, paddingVertical: 8,
+                  shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
+                }}>
+                <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12.5, color: '#78716c' }}>{phrase}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Pressable
+            onPress={saveReasons}
+            disabled={reasonsSaving || !canContinue}
+            style={{
+              backgroundColor: canContinue ? COLORS.primary : '#e7e5e4',
+              borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 4, marginBottom: 14, width: '100%',
+            }}>
+            {reasonsSaving
+              ? <ActivityIndicator color="white" />
+              : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Continue</Text>}
+          </Pressable>
+          <Pressable onPress={() => router.replace('/onboarding?step=welcome')} disabled={reasonsSaving} style={{ alignSelf: 'center' }}>
             <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#a8a29e' }}>Skip for now</Text>
           </Pressable>
         </View>

@@ -18,7 +18,9 @@ export default function PursuitsOnboardingScreen() {
   async function handleContinue() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      await supabase.from('users').upsert({ id: user.id, pursuits_onboarding_seen: true });
+      // email is required if this upsert ever has to INSERT (no row yet for
+      // this id) — a bare {id, pursuits_onboarding_seen} payload can't satisfy that.
+      await supabase.from('users').upsert({ id: user.id, email: user.email, pursuits_onboarding_seen: true });
     }
     router.replace('/prompt-themes');
   }
