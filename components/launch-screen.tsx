@@ -15,8 +15,8 @@ import { COLORS } from '@/constants/colors';
 const WORDMARK = 'Wabii';
 const REVEAL_MS = 500;
 const HOLD_MS = 150;
-const SETTLE_MS = 220;
-const EXPAND_MS = 380;
+const SETTLE_MS = 140;
+const EXPAND_MS = 260;
 
 const CIRCLE_SIZE = 64;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
