@@ -564,43 +564,51 @@ export default function SearchScreen() {
           }
 
           return (
-            <Pressable
-              onPress={handlePress}
-              style={({ pressed }) => ({
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
-                borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, marginHorizontal: 24,
-                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-              })}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                <View style={{
-                  width: 38, height: 38, borderRadius: 13, backgroundColor: style.chipBg,
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Feather name={style.icon} size={16} color={style.color} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{
-                    fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase',
-                    color: style.color, marginBottom: 3,
+            // The screen-edge gutter lives on this plain View, not on the
+            // Pressable's own (pressed-state-dependent) style function —
+            // NativeWind's JSX interop was silently dropping marginHorizontal
+            // when it was part of that function-style object, leaving these
+            // rows flush against the screen edges despite the style saying
+            // otherwise.
+            <View style={{ marginHorizontal: 24 }}>
+              <Pressable
+                onPress={handlePress}
+                style={({ pressed }) => ({
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
+                  borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14,
+                  shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+                })}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                  <View style={{
+                    width: 38, height: 38, borderRadius: 13, backgroundColor: style.chipBg,
+                    alignItems: 'center', justifyContent: 'center',
                   }}>
-                    {tag}
-                  </Text>
-                  <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#292524' }} numberOfLines={1}>
-                    {label}
-                  </Text>
+                    <Feather name={style.icon} size={16} color={style.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{
+                      fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase',
+                      color: style.color, marginBottom: 3,
+                    }}>
+                      {tag}
+                    </Text>
+                    <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#292524' }} numberOfLines={1}>
+                      {label}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <Text
-                style={{
-                  fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 14, includeFontPadding: false,
-                  color: '#b3a89c', marginLeft: 14,
-                  flexShrink: 0, minWidth: 58, textAlign: 'right',
-                }}
-                numberOfLines={1}>
-                {formatRelative(item.created_at)}
-              </Text>
-            </Pressable>
+                <Text
+                  style={{
+                    fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 14, includeFontPadding: false,
+                    color: '#b3a89c', marginLeft: 14,
+                    flexShrink: 0, minWidth: 58, textAlign: 'right',
+                  }}
+                  numberOfLines={1}>
+                  {formatRelative(item.created_at)}
+                </Text>
+              </Pressable>
+            </View>
           );
         }}
       />
