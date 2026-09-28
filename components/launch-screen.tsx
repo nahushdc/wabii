@@ -6,8 +6,6 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withDelay,
-  withSequence,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { WARM_BG_COLOR } from '@/components/warm-background';
@@ -17,7 +15,7 @@ const WORDMARK = 'Wabii';
 const REVEAL_MS = 500;
 const HOLD_MS = 150;
 const SETTLE_MS = 140;
-const EXPAND_MS = 260;
+const RIPPLE_MS = 320;
 
 const CIRCLE_SIZE = 64;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -32,7 +30,7 @@ export function LaunchScreen({ ready, onFinished }: { ready: boolean; onFinished
   const wordmarkOpacity = useSharedValue(1);
   const wordmarkTranslateY = useSharedValue(0);
   const circleOpacity = useSharedValue(0);
-  const circleScale = useSharedValue(0.5);
+  const circleScale = useSharedValue(0.001);
   const screenOpacity = useSharedValue(1);
 
   const [expandComplete, setExpandComplete] = useState(false);
@@ -46,19 +44,15 @@ export function LaunchScreen({ ready, onFinished }: { ready: boolean; onFinished
     wordmarkTranslateY.value = withDelay(toSettle, withTiming(-10, { duration: SETTLE_MS }));
     circleOpacity.value = withDelay(toSettle, withTiming(1, { duration: SETTLE_MS }));
 
-    // ...then the circle itself becomes the transition: it grows until it
-    // swallows the whole screen, at which point we're just holding on solid
-    // brand-orange until the app is actually ready to be revealed.
+    // ...then it ripples straight out from nothing to full-screen cover in one
+    // continuous motion — no held "small circle" beat — decelerating like a
+    // ripple as it swallows the screen, at which point we're just holding on
+    // solid brand-orange until the app is actually ready to be revealed.
     circleScale.value = withDelay(
       toSettle,
-      withSequence(
-        // A snappy pop with a touch of overshoot reads as more energetic
-        // than an eased-in timing curve for the same duration.
-        withSpring(1, { damping: 14, stiffness: 300, mass: 0.5 }),
-        withTiming(COVER_SCALE, { duration: EXPAND_MS, easing: Easing.in(Easing.cubic) }, finished => {
-          if (finished) runOnJS(setExpandComplete)(true);
-        })
-      )
+      withTiming(COVER_SCALE, { duration: RIPPLE_MS, easing: Easing.out(Easing.cubic) }, finished => {
+        if (finished) runOnJS(setExpandComplete)(true);
+      })
     );
   }, []);
 
