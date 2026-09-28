@@ -4,7 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
-import { WarmBackground } from '@/components/warm-background';
+import { WarmBackground, WARM_BG_COLOR } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 
 type ThemeOption = { id: string; name: string };
@@ -416,40 +416,58 @@ export default function SearchScreen() {
           }}>
             Weekly reflections
           </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={WEEKLY_CARD_WIDTH + WEEKLY_CARD_GAP}
-            decelerationRate="fast"
-            contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 6, gap: WEEKLY_CARD_GAP }}
-            style={{ flexGrow: 0 }}>
-            {weeklyDigests.map((w, i) => {
-              const cardStyle = WEEKLY_CARD_STYLES[i % WEEKLY_CARD_STYLES.length];
-              const isNew = !w.seen_at;
-              return (
-                <Pressable
-                  key={w.id}
-                  onPress={() => router.push(`/digest/${w.id}`)}
-                  style={{
-                    width: WEEKLY_CARD_WIDTH, minHeight: 96, backgroundColor: cardStyle.bg, borderRadius: 14,
-                    padding: 12, transform: [{ rotate: cardStyle.rotate }],
-                    borderWidth: 1, borderColor: 'rgba(28,25,23,0.06)',
-                    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3,
-                  }}>
-                  {isNew && (
-                    <View style={{
-                      position: 'absolute', top: 8, right: 8, width: 7, height: 7, borderRadius: 4,
-                      backgroundColor: cardStyle.accent,
-                    }} />
-                  )}
-                  <Text style={{ fontSize: 16, marginBottom: 8 }}>🌿</Text>
-                  <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 12, color: cardStyle.accent, lineHeight: 16 }}>
-                    {formatWeek(w.week_start)}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          <View style={{ position: 'relative' }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={WEEKLY_CARD_WIDTH + WEEKLY_CARD_GAP}
+              decelerationRate="fast"
+              contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 6, gap: WEEKLY_CARD_GAP }}
+              style={{ flexGrow: 0 }}>
+              {weeklyDigests.map((w, i) => {
+                const cardStyle = WEEKLY_CARD_STYLES[i % WEEKLY_CARD_STYLES.length];
+                const isNew = !w.seen_at;
+                return (
+                  <Pressable
+                    key={w.id}
+                    onPress={() => router.push(`/digest/${w.id}`)}
+                    style={{
+                      width: WEEKLY_CARD_WIDTH, minHeight: 96, backgroundColor: cardStyle.bg, borderRadius: 14,
+                      padding: 12, transform: [{ rotate: cardStyle.rotate }],
+                      borderWidth: 1, borderColor: 'rgba(28,25,23,0.06)',
+                      shadowColor: '#1c1917', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3,
+                    }}>
+                    {isNew && (
+                      <View style={{
+                        position: 'absolute', top: 8, right: 8, width: 7, height: 7, borderRadius: 4,
+                        backgroundColor: cardStyle.accent,
+                      }} />
+                    )}
+                    <Text style={{ fontSize: 16, marginBottom: 8 }}>🌿</Text>
+                    <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 12, color: cardStyle.accent, lineHeight: 16 }}>
+                      {formatWeek(w.week_start)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            {/* Soft fade instead of an abrupt cut where a peeking card meets
+                the screen edge, on whichever side has more to scroll to. */}
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(245,239,228,0)', WARM_BG_COLOR]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: 32 }}
+            />
+            <LinearGradient
+              pointerEvents="none"
+              colors={[WARM_BG_COLOR, 'rgba(245,239,228,0)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 24 }}
+            />
+          </View>
         </View>
       )}
 
