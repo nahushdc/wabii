@@ -45,12 +45,12 @@ export function LaunchScreen({ ready, onFinished }: { ready: boolean; onFinished
     circleOpacity.value = withDelay(toSettle, withTiming(1, { duration: SETTLE_MS }));
 
     // ...then it ripples straight out from nothing to full-screen cover in one
-    // continuous motion — no held "small circle" beat — decelerating like a
-    // ripple as it swallows the screen, at which point we're just holding on
-    // solid brand-orange until the app is actually ready to be revealed.
+    // continuous motion — no held "small circle" beat, and no decelerating
+    // tail at the end either — constant speed all the way through reads as
+    // quicker/peppier than an eased-out curve that lingers as it finishes.
     circleScale.value = withDelay(
       toSettle,
-      withTiming(COVER_SCALE, { duration: RIPPLE_MS, easing: Easing.out(Easing.cubic) }, finished => {
+      withTiming(COVER_SCALE, { duration: RIPPLE_MS, easing: Easing.linear }, finished => {
         if (finished) runOnJS(setExpandComplete)(true);
       })
     );
