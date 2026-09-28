@@ -20,6 +20,9 @@ type DigestInsights = {
 type MonthlyDigest = { id: string; content: string; month_start: string; seen_at: string | null; insights: DigestInsights | null };
 type WeeklyDigestSummary = { id: string; week_start: string; seen_at: string | null };
 
+const WEEKLY_CARD_WIDTH = 118;
+const WEEKLY_CARD_GAP = 14;
+
 // Alternating pastel + slight rotation for each mini weekly card, so the row
 // reads like a little scattered stack of notes rather than a rigid list.
 const WEEKLY_CARD_STYLES = [
@@ -416,7 +419,9 @@ export default function SearchScreen() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 6, gap: 14 }}
+            snapToInterval={WEEKLY_CARD_WIDTH + WEEKLY_CARD_GAP}
+            decelerationRate="fast"
+            contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 6, gap: WEEKLY_CARD_GAP }}
             style={{ flexGrow: 0 }}>
             {weeklyDigests.map((w, i) => {
               const cardStyle = WEEKLY_CARD_STYLES[i % WEEKLY_CARD_STYLES.length];
@@ -426,7 +431,7 @@ export default function SearchScreen() {
                   key={w.id}
                   onPress={() => router.push(`/digest/${w.id}`)}
                   style={{
-                    width: 118, minHeight: 96, backgroundColor: cardStyle.bg, borderRadius: 14,
+                    width: WEEKLY_CARD_WIDTH, minHeight: 96, backgroundColor: cardStyle.bg, borderRadius: 14,
                     padding: 12, transform: [{ rotate: cardStyle.rotate }],
                     borderWidth: 1, borderColor: 'rgba(28,25,23,0.06)',
                     shadowColor: '#1c1917', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3,
