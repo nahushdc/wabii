@@ -48,9 +48,14 @@ export function VoicePulseButton({
       ring2.setValue(0);
       return;
     }
+    // A short, near-instant timing beats a spring here — a spring's
+    // multi-frame settle reads as lag against 100ms amplitude updates, since
+    // the ring is still easing toward the *previous* value when the next
+    // one arrives. Snapping quickly and immediately re-targeting instead
+    // makes the motion track speech directly rather than chase it.
     const level = Math.max(0, Math.min(1, amplitude));
-    Animated.spring(ring1, { toValue: level, useNativeDriver: true, friction: 4, tension: 70 }).start();
-    Animated.spring(ring2, { toValue: level, useNativeDriver: true, friction: 3, tension: 45 }).start();
+    Animated.timing(ring1, { toValue: level, duration: 70, useNativeDriver: true }).start();
+    Animated.timing(ring2, { toValue: level, duration: 90, useNativeDriver: true }).start();
   }, [amplitude, isRecording, ring1, ring2]);
 
   const baseScale = breathe.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });

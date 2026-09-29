@@ -13,12 +13,15 @@ function colorForConfidence(confidence: number): string {
 
 function AnimatedWord({ word, color }: { word: string; color: string }) {
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(4)).current;
+  const translateY = useRef(new Animated.Value(2)).current;
 
   useEffect(() => {
+    // A quick, near-immediate entrance — 220ms read as a laggy delay between
+    // speaking a word and seeing it land, since words already arrive well
+    // after they're spoken (Deepgram's own finalization delay).
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 220, useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 0, duration: 220, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 110, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 110, useNativeDriver: true }),
       // eslint-disable-next-line react-hooks/exhaustive-deps
     ]).start();
   }, []);

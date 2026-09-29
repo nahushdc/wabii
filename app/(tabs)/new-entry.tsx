@@ -22,13 +22,6 @@ function getTodayLabel() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-function formatDuration(ms: number) {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
 // ---------- Text mode ----------
 
 function TextComposer({
@@ -126,10 +119,9 @@ function TextComposer({
 
 function VoiceComposer({ transcript, setTranscript }: { transcript: string; setTranscript: (v: string) => void }) {
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
-  const [recordedDurationMs, setRecordedDurationMs] = useState(0);
   const player = useAudioPlayer(recordedUri ?? undefined);
   const playerStatus = useAudioPlayerStatus(player);
-  const { isRecording, connecting, interimText, error: liveError, durationMs, amplitude, finalWords, start, stop } = useLiveTranscription({
+  const { isRecording, connecting, interimText, error: liveError, amplitude, finalWords, start, stop } = useLiveTranscription({
     onFinalTranscript: setTranscript,
   });
   const [error, setError] = useState('');
@@ -137,13 +129,11 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
   async function startRecording() {
     setError('');
     setRecordedUri(null);
-    setRecordedDurationMs(0);
     setTranscript('');
     await start();
   }
 
   async function stopRecording() {
-    setRecordedDurationMs(durationMs);
     const result = await stop();
     if (!result?.fileUri) {
       setError('No audio was captured. Try recording again.');
@@ -156,50 +146,45 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Transcript — always visible up top, grows to fill the available space
-          above the fixed record controls at the bottom. */}
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16 }}>
+      {/* Transcript — grows straight out of the background, anchored to the
+          bottom so it reads as text rising just above the record button
+          rather than a boxed, labeled field. */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end', paddingHorizontal: 28, paddingTop: 24, paddingBottom: 20 }}>
         {(error || liveError) ? (
           <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 16 }}>
             <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || liveError}</Text>
           </View>
         ) : null}
 
-        <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 8 }}>
-          Transcript
-        </Text>
-        <View style={{
-          flex: 1, backgroundColor: '#ffffff', borderRadius: 16, padding: 16, minHeight: 160,
-          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-        }}>
-          {hasTranscript ? (
-            isRecording ? (
-              <AnimatedTranscript
-                words={finalWords}
-                interimText={interimText}
-                style={{ fontFamily: 'Inter_400Regular', fontSize: 16, lineHeight: 24 }}
-                interimStyle={{ color: '#a8a29e' }}
-              />
-            ) : (
-              <TextInput
-                style={{
-                  flex: 1, fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24,
-                  textAlignVertical: 'top',
-                }}
-                value={transcript}
-                onChangeText={setTranscript}
-                multiline
-              />
-            )
+        {hasTranscript ? (
+          isRecording ? (
+            <AnimatedTranscript
+              words={finalWords}
+              interimText={interimText}
+              style={{ fontFamily: 'Inter_400Regular', fontSize: 19, lineHeight: 29, color: '#1c1917' }}
+              interimStyle={{ color: '#a8a29e' }}
+            />
           ) : (
-            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#c4b9b0', lineHeight: 24 }}>
-              Your words will appear here as you speak…
-            </Text>
-          )}
-        </View>
+            <TextInput
+              style={{
+                fontFamily: 'Inter_400Regular', fontSize: 19, color: '#1c1917', lineHeight: 29,
+                textAlignVertical: 'top',
+              }}
+              value={transcript}
+              onChangeText={setTranscript}
+              multiline
+            />
+          )
+        ) : (
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 17, color: '#c4b9b0', lineHeight: 26, textAlign: 'center' }}>
+            Tap the mic and start speaking…
+          </Text>
+        )}
 
         {recordedUri && !isRecording && (
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
             <Pressable
               onPress={() => {
                 if (playerStatus.isLoaded && playerStatus.duration === 0) {
@@ -232,29 +217,15 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
         )}
       </ScrollView>
 
-      {/* Record controls — pinned to the bottom, pulse button beside the elapsed time. */}
-      <View style={{ alignItems: 'center', paddingHorizontal: 24, paddingTop: 12, paddingBottom: 28 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-          <VoicePulseButton
-            isRecording={isRecording}
-            connecting={connecting}
-            amplitude={amplitude}
-            disabled={connecting}
-            onPress={isRecording ? stopRecording : startRecording}
-          />
-          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 22, color: '#1c1917', minWidth: 60 }}>
-            {connecting ? '···' : isRecording ? formatDuration(durationMs) : recordedUri ? formatDuration(recordedDurationMs) : '0:00'}
-          </Text>
-        </View>
-        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e', marginTop: 12, textAlign: 'center' }}>
-          {connecting
-            ? 'Connecting…'
-            : isRecording
-            ? 'Speak freely — tap to stop.'
-            : recordedUri
-            ? 'Play it back, re-record, or edit the transcript above.'
-            : 'Tap to start recording'}
-        </Text>
+      {/* Record button — pinned low, nothing else beside it. */}
+      <View style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 44 }}>
+        <VoicePulseButton
+          isRecording={isRecording}
+          connecting={connecting}
+          amplitude={amplitude}
+          disabled={connecting}
+          onPress={isRecording ? stopRecording : startRecording}
+        />
       </View>
     </View>
   );

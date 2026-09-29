@@ -127,7 +127,9 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
         sampleRate: 16000,
         channels: 1,
         encoding: 'pcm_16bit',
-        interval: 250,
+        // 100ms (was 250ms) — the pulse orb's amplitude reactivity is only as
+        // smooth as this update rate, and 250ms visibly lagged behind speech.
+        interval: 100,
         output: { primary: { enabled: true, format: 'wav' } },
         onAudioStream: async (event) => {
           if (typeof event.data !== 'string') return;
