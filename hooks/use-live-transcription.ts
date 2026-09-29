@@ -38,22 +38,6 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes.subarray(0, byteIndex);
 }
 
-// RMS amplitude of a little-endian PCM16 chunk, normalized to ~[0,1] for
-// driving waveform UI. 9000 is an empirical scale for typical speaking
-// volume at this sample rate — not a calibrated dB measurement.
-function computeAmplitude(bytes: Uint8Array): number {
-  const sampleCount = bytes.length >> 1;
-  if (sampleCount === 0) return 0;
-  let sumSquares = 0;
-  for (let i = 0; i < sampleCount; i++) {
-    let sample = bytes[i * 2] | (bytes[i * 2 + 1] << 8);
-    if (sample >= 32768) sample -= 65536;
-    sumSquares += sample * sample;
-  }
-  const rms = Math.sqrt(sumSquares / sampleCount);
-  return Math.min(1, rms / 9000);
-}
-
 export type TranscriptWord = { word: string; confidence: number };
 
 // Shared live-transcription engine (WebSocket relay -> Deepgram) used by both
@@ -127,15 +111,29 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
         sampleRate: 16000,
         channels: 1,
         encoding: 'pcm_16bit',
-        // 100ms (was 250ms) — the pulse orb's amplitude reactivity is only as
-        // smooth as this update rate, and 250ms visibly lagged behind speech.
-        interval: 100,
+        interval: 250,
         output: { primary: { enabled: true, format: 'wav' } },
         onAudioStream: async (event) => {
           if (typeof event.data !== 'string') return;
           const bytes = base64ToBytes(event.data);
-          setAmplitude(computeAmplitude(bytes));
           if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(bytes);
+        },
+        // Native audio metering for the pulse orb, instead of hand-rolling RMS
+        // from the streamed PCM on the JS thread — computed on the native side
+        // at a much higher rate (intervalAnalysis) than the 4x/sec transcription
+        // chunking needs, so the orb actually tracks voice modulation.
+        enableProcessing: true,
+        intervalAnalysis: 60,
+        keepFullAnalysis: false,
+        onAudioAnalysis: async (event) => {
+          const points = event.dataPoints;
+          const latest = points?.[points.length - 1];
+          if (!latest) return;
+          // rms is already normalized to ~[0,1]; sqrt gives it a perceptual
+          // (log-ish) boost so quiet-to-loud speech reads as a visible swing
+          // instead of a barely-moving linear meter.
+          const level = Math.max(0, Math.min(1, Math.sqrt(latest.rms ?? 0) * 1.3));
+          setAmplitude(level);
         },
       });
     } catch (e: any) {

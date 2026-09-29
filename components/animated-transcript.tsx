@@ -12,25 +12,21 @@ function colorForConfidence(confidence: number): string {
 }
 
 function AnimatedWord({ word, color }: { word: string; color: string }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(2)).current;
+  // No opacity/position entrance — a word finalizing was already on screen a
+  // moment earlier as interim (grey) text, occupying the same spot. Popping
+  // it in from invisible is what actually read as "chunky"; all that should
+  // happen here is a quiet color settle from interim-grey to its confidence
+  // color, so text just keeps flowing instead of visibly re-appearing.
+  const tone = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // A quick, near-immediate entrance — 220ms read as a laggy delay between
-    // speaking a word and seeing it land, since words already arrive well
-    // after they're spoken (Deepgram's own finalization delay).
-    Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 110, useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 0, duration: 110, useNativeDriver: true }),
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    ]).start();
+    Animated.timing(tone, { toValue: 1, duration: 240, useNativeDriver: false }).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
-    <Animated.Text style={{ opacity, transform: [{ translateY }], color }}>
-      {word}
-    </Animated.Text>
-  );
+  const animatedColor = tone.interpolate({ inputRange: [0, 1], outputRange: ['#a8a29e', color] });
+
+  return <Animated.Text style={{ color: animatedColor }}>{word}</Animated.Text>;
 }
 
 // Renders a live transcript word-by-word, each new word fading + sliding in
