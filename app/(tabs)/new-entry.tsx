@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Keyboard, LayoutAnimation, UIManager, Animated } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Keyboard, LayoutAnimation, UIManager } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -13,7 +13,7 @@ import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { cancelTodaysReminderOccurrencesIfJournaled } from '@/lib/reminder-notifications';
-import { Waveform } from '@/components/waveform';
+import { VoicePulseButton } from '@/components/voice-pulse';
 import { AnimatedTranscript } from '@/components/animated-transcript';
 
 type Mode = 'text' | 'voice';
@@ -126,30 +126,24 @@ function TextComposer({
 
 function VoiceComposer({ transcript, setTranscript }: { transcript: string; setTranscript: (v: string) => void }) {
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
+  const [recordedDurationMs, setRecordedDurationMs] = useState(0);
   const player = useAudioPlayer(recordedUri ?? undefined);
   const playerStatus = useAudioPlayerStatus(player);
   const { isRecording, connecting, interimText, error: liveError, durationMs, amplitude, finalWords, start, stop } = useLiveTranscription({
     onFinalTranscript: setTranscript,
   });
   const [error, setError] = useState('');
-  const micScale = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.timing(micScale, {
-      toValue: isRecording ? 1 + Math.min(1, amplitude) * 0.18 : 1,
-      duration: 120,
-      useNativeDriver: true,
-    }).start();
-  }, [amplitude, isRecording, micScale]);
 
   async function startRecording() {
     setError('');
     setRecordedUri(null);
+    setRecordedDurationMs(0);
     setTranscript('');
     await start();
   }
 
   async function stopRecording() {
+    setRecordedDurationMs(durationMs);
     const result = await stop();
     if (!result?.fileUri) {
       setError('No audio was captured. Try recording again.');
@@ -158,90 +152,28 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
     setRecordedUri(result.fileUri);
   }
 
+  const hasTranscript = transcript || interimText || isRecording;
+
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 24 }}>
-      <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-        <Animated.View style={{ transform: [{ scale: micScale }] }}>
-          <Pressable
-            onPress={isRecording ? stopRecording : startRecording}
-            disabled={connecting}
-            style={{
-              width: 96, height: 96, borderRadius: 48,
-              backgroundColor: isRecording ? '#ef4444' : connecting ? '#e7e5e4' : COLORS.primary,
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 6,
-            }}>
-            {connecting
-              ? <ActivityIndicator color="#a8a29e" size="small" />
-              : <Feather name={isRecording ? 'square' : 'mic'} size={34} color="#ffffff" />}
-          </Pressable>
-        </Animated.View>
-        <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 18, color: '#1c1917', marginTop: 16 }}>
-          {connecting ? 'Connecting…' : isRecording ? formatDuration(durationMs) : recordedUri ? 'Recording ready' : 'Tap to record'}
-        </Text>
-        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e', marginTop: 4, textAlign: 'center' }}>
-          {isRecording
-            ? 'Speak freely — your words appear below as you talk.'
-            : recordedUri
-            ? 'Play it back, re-record, or edit the transcript below.'
-            : 'Record your thoughts out loud — transcribed live as you speak.'}
-        </Text>
-        {isRecording && (
-          <View style={{ marginTop: 16 }}>
-            <Waveform amplitude={amplitude} active={isRecording} color={COLORS.primary} />
+    <View style={{ flex: 1 }}>
+      {/* Transcript — always visible up top, grows to fill the available space
+          above the fixed record controls at the bottom. */}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16 }}>
+        {(error || liveError) ? (
+          <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 16 }}>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || liveError}</Text>
           </View>
-        )}
-      </View>
+        ) : null}
 
-      {recordedUri && !isRecording && (
-        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-          <Pressable
-            onPress={() => {
-              if (playerStatus.isLoaded && playerStatus.duration === 0) {
-                setError('This recording has no audio in it, so it can\'t be played back.');
-                return;
-              }
-              player.playing ? player.pause() : player.play();
-            }}
-            style={{
-              flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-              backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
-              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-            }}>
-            <Feather name={player.playing ? 'pause' : 'play'} size={16} color="#1c1917" />
-            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>
-              {player.playing ? 'Pause' : 'Play'}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={startRecording}
-            style={{
-              flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-              backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
-              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-            }}>
-            <Feather name="rotate-ccw" size={16} color="#1c1917" />
-            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>Re-record</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {(error || liveError) ? (
-        <View style={{ backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 16 }}>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || liveError}</Text>
-        </View>
-      ) : null}
-
-      {(transcript || interimText || isRecording) ? (
-        <View style={{ marginBottom: 24 }}>
-          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 8 }}>
-            Transcript
-          </Text>
-          <View style={{
-            backgroundColor: '#ffffff', borderRadius: 16, padding: 16, minHeight: 120,
-            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-          }}>
-            {isRecording ? (
+        <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 8 }}>
+          Transcript
+        </Text>
+        <View style={{
+          flex: 1, backgroundColor: '#ffffff', borderRadius: 16, padding: 16, minHeight: 160,
+          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+        }}>
+          {hasTranscript ? (
+            isRecording ? (
               <AnimatedTranscript
                 words={finalWords}
                 interimText={interimText}
@@ -251,18 +183,80 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
             ) : (
               <TextInput
                 style={{
-                  fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24,
+                  flex: 1, fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24,
                   textAlignVertical: 'top',
                 }}
                 value={transcript}
                 onChangeText={setTranscript}
                 multiline
               />
-            )}
-          </View>
+            )
+          ) : (
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#c4b9b0', lineHeight: 24 }}>
+              Your words will appear here as you speak…
+            </Text>
+          )}
         </View>
-      ) : null}
-    </ScrollView>
+
+        {recordedUri && !isRecording && (
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+            <Pressable
+              onPress={() => {
+                if (playerStatus.isLoaded && playerStatus.duration === 0) {
+                  setError('This recording has no audio in it, so it can\'t be played back.');
+                  return;
+                }
+                player.playing ? player.pause() : player.play();
+              }}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
+                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+              }}>
+              <Feather name={player.playing ? 'pause' : 'play'} size={16} color="#1c1917" />
+              <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>
+                {player.playing ? 'Pause' : 'Play'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={startRecording}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                backgroundColor: '#ffffff', borderRadius: 14, paddingVertical: 14,
+                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+              }}>
+              <Feather name="rotate-ccw" size={16} color="#1c1917" />
+              <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#1c1917' }}>Re-record</Text>
+            </Pressable>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Record controls — pinned to the bottom, pulse button beside the elapsed time. */}
+      <View style={{ alignItems: 'center', paddingHorizontal: 24, paddingTop: 12, paddingBottom: 28 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
+          <VoicePulseButton
+            isRecording={isRecording}
+            connecting={connecting}
+            amplitude={amplitude}
+            disabled={connecting}
+            onPress={isRecording ? stopRecording : startRecording}
+          />
+          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 22, color: '#1c1917', minWidth: 60 }}>
+            {connecting ? '···' : isRecording ? formatDuration(durationMs) : recordedUri ? formatDuration(recordedDurationMs) : '0:00'}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e', marginTop: 12, textAlign: 'center' }}>
+          {connecting
+            ? 'Connecting…'
+            : isRecording
+            ? 'Speak freely — tap to stop.'
+            : recordedUri
+            ? 'Play it back, re-record, or edit the transcript above.'
+            : 'Tap to start recording'}
+        </Text>
+      </View>
+    </View>
   );
 }
 
