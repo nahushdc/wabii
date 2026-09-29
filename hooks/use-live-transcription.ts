@@ -40,6 +40,32 @@ function base64ToBytes(base64: string): Uint8Array {
 
 export type TranscriptWord = { word: string; confidence: number };
 
+// Temporary latency instrumentation (remove once we've diagnosed perceived
+// voice-mode lag) — rolling averages of two numbers, surfaced in-app since
+// this build has no attached Metro/console to read logs from:
+//   roundTripMs: last audio chunk SENT -> next transcript message RECEIVED
+//                (covers network + Deepgram processing together)
+//   chunkGapMs:  actual observed time between successive audio sends
+//                (should track the configured 250ms interval — if it's
+//                consistently higher, the recorder itself is buffering/
+//                stalling before handing us chunks, independent of network)
+export type LiveTranscriptionDebugStats = {
+  lastRoundTripMs: number;
+  avgRoundTripMs: number;
+  avgChunkGapMs: number;
+  sampleCount: number;
+};
+
+function average(samples: number[]): number {
+  if (samples.length === 0) return 0;
+  return samples.reduce((a, b) => a + b, 0) / samples.length;
+}
+
+function pushSample(samples: number[], value: number, max = 20) {
+  samples.push(value);
+  if (samples.length > max) samples.shift();
+}
+
 // Shared live-transcription engine (WebSocket relay -> Deepgram) used by both
 // the new-entry voice composer and dictation-into-existing-text (e.g. entry
 // editing). `onFinalTranscript` fires with the FULL accumulated transcript
@@ -52,17 +78,25 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
   const [error, setError] = useState('');
   const [amplitude, setAmplitude] = useState(0);
   const [finalWords, setFinalWords] = useState<TranscriptWord[]>([]);
+  const [debugStats, setDebugStats] = useState<LiveTranscriptionDebugStats | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const finalTranscriptRef = useRef('');
   const finalWordsRef = useRef<TranscriptWord[]>([]);
+  const lastChunkSentAtRef = useRef<number | null>(null);
+  const roundTripSamplesRef = useRef<number[]>([]);
+  const chunkGapSamplesRef = useRef<number[]>([]);
 
   async function start() {
     setError('');
     setInterimText('');
     setAmplitude(0);
     setFinalWords([]);
+    setDebugStats(null);
     finalTranscriptRef.current = '';
     finalWordsRef.current = [];
+    lastChunkSentAtRef.current = null;
+    roundTripSamplesRef.current = [];
+    chunkGapSamplesRef.current = [];
     try {
       const { granted } = await AudioModule.requestRecordingPermissionsAsync();
       if (!granted) { setError('Microphone access is needed to record.'); return; }
@@ -81,6 +115,18 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
           const alt = msg?.channel?.alternatives?.[0];
           const text = alt?.transcript ?? '';
           if (!text) return;
+
+          if (lastChunkSentAtRef.current != null) {
+            const roundTripMs = Date.now() - lastChunkSentAtRef.current;
+            pushSample(roundTripSamplesRef.current, roundTripMs);
+            setDebugStats({
+              lastRoundTripMs: roundTripMs,
+              avgRoundTripMs: Math.round(average(roundTripSamplesRef.current)),
+              avgChunkGapMs: Math.round(average(chunkGapSamplesRef.current)),
+              sampleCount: roundTripSamplesRef.current.length,
+            });
+          }
+
           if (msg.is_final) {
             finalTranscriptRef.current = `${finalTranscriptRef.current} ${text}`.trim();
             onFinalTranscript(finalTranscriptRef.current);
@@ -116,6 +162,11 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
         onAudioStream: async (event) => {
           if (typeof event.data !== 'string') return;
           const bytes = base64ToBytes(event.data);
+          const now = Date.now();
+          if (lastChunkSentAtRef.current != null) {
+            pushSample(chunkGapSamplesRef.current, now - lastChunkSentAtRef.current);
+          }
+          lastChunkSentAtRef.current = now;
           if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(bytes);
         },
         // Native audio metering for the pulse orb, instead of hand-rolling RMS
@@ -159,5 +210,5 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
     }
   }
 
-  return { isRecording, connecting, interimText, error, durationMs, amplitude, finalWords, start, stop };
+  return { isRecording, connecting, interimText, error, durationMs, amplitude, finalWords, debugStats, start, stop };
 }

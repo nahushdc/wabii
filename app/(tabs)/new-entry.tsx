@@ -121,7 +121,7 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
   const player = useAudioPlayer(recordedUri ?? undefined);
   const playerStatus = useAudioPlayerStatus(player);
-  const { isRecording, connecting, interimText, error: liveError, amplitude, finalWords, start, stop } = useLiveTranscription({
+  const { isRecording, connecting, interimText, error: liveError, amplitude, finalWords, debugStats, start, stop } = useLiveTranscription({
     onFinalTranscript: setTranscript,
   });
   const [error, setError] = useState('');
@@ -226,6 +226,16 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
           disabled={connecting}
           onPress={isRecording ? stopRecording : startRecording}
         />
+        {/* TEMPORARY — latency diagnostics, remove once we've traced the lag.
+            roundTrip = last audio chunk sent -> next transcript received.
+            chunkGap = actual observed spacing between audio sends (should
+            track the configured 250ms; if it's much higher, the recorder is
+            stalling before we ever touch the network). */}
+        {isRecording && debugStats && (
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: '#c4b9b0', marginTop: 10 }}>
+            round-trip ~{debugStats.avgRoundTripMs}ms (last {debugStats.lastRoundTripMs}ms) · chunk gap ~{debugStats.avgChunkGapMs}ms
+          </Text>
+        )}
       </View>
     </View>
   );
