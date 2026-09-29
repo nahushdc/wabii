@@ -38,6 +38,24 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes.subarray(0, byteIndex);
 }
 
+// RMS amplitude of a little-endian PCM16 chunk, normalized to ~[0,1] for
+// driving waveform UI. 9000 is an empirical scale for typical speaking
+// volume at this sample rate — not a calibrated dB measurement.
+function computeAmplitude(bytes: Uint8Array): number {
+  const sampleCount = bytes.length >> 1;
+  if (sampleCount === 0) return 0;
+  let sumSquares = 0;
+  for (let i = 0; i < sampleCount; i++) {
+    let sample = bytes[i * 2] | (bytes[i * 2 + 1] << 8);
+    if (sample >= 32768) sample -= 65536;
+    sumSquares += sample * sample;
+  }
+  const rms = Math.sqrt(sumSquares / sampleCount);
+  return Math.min(1, rms / 9000);
+}
+
+export type TranscriptWord = { word: string; confidence: number };
+
 // Shared live-transcription engine (WebSocket relay -> Deepgram) used by both
 // the new-entry voice composer and dictation-into-existing-text (e.g. entry
 // editing). `onFinalTranscript` fires with the FULL accumulated transcript
@@ -48,13 +66,19 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
   const [connecting, setConnecting] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [error, setError] = useState('');
+  const [amplitude, setAmplitude] = useState(0);
+  const [finalWords, setFinalWords] = useState<TranscriptWord[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
   const finalTranscriptRef = useRef('');
+  const finalWordsRef = useRef<TranscriptWord[]>([]);
 
   async function start() {
     setError('');
     setInterimText('');
+    setAmplitude(0);
+    setFinalWords([]);
     finalTranscriptRef.current = '';
+    finalWordsRef.current = [];
     try {
       const { granted } = await AudioModule.requestRecordingPermissionsAsync();
       if (!granted) { setError('Microphone access is needed to record.'); return; }
@@ -76,6 +100,12 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
           if (msg.is_final) {
             finalTranscriptRef.current = `${finalTranscriptRef.current} ${text}`.trim();
             onFinalTranscript(finalTranscriptRef.current);
+            const words: TranscriptWord[] = (alt?.words ?? []).map((w: any) => ({
+              word: w.punctuated_word ?? w.word,
+              confidence: typeof w.confidence === 'number' ? w.confidence : 1,
+            }));
+            finalWordsRef.current = [...finalWordsRef.current, ...words];
+            setFinalWords(finalWordsRef.current);
             setInterimText('');
           } else {
             setInterimText(text);
@@ -102,6 +132,7 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
         onAudioStream: async (event) => {
           if (typeof event.data !== 'string') return;
           const bytes = base64ToBytes(event.data);
+          setAmplitude(computeAmplitude(bytes));
           if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(bytes);
         },
       });
@@ -120,6 +151,7 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
       }
       socketRef.current = null;
       setInterimText('');
+      setAmplitude(0);
       return result;
     } catch (e: any) {
       setError(e?.message ?? 'Could not finish that recording.');
@@ -127,5 +159,5 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
     }
   }
 
-  return { isRecording, connecting, interimText, error, durationMs, start, stop };
+  return { isRecording, connecting, interimText, error, durationMs, amplitude, finalWords, start, stop };
 }

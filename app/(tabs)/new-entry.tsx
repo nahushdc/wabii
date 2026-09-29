@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Keyboard, LayoutAnimation, UIManager } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Keyboard, LayoutAnimation, UIManager, Animated } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -13,6 +13,8 @@ import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { cancelTodaysReminderOccurrencesIfJournaled } from '@/lib/reminder-notifications';
+import { Waveform } from '@/components/waveform';
+import { AnimatedTranscript } from '@/components/animated-transcript';
 
 type Mode = 'text' | 'voice';
 
@@ -126,10 +128,19 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
   const player = useAudioPlayer(recordedUri ?? undefined);
   const playerStatus = useAudioPlayerStatus(player);
-  const { isRecording, connecting, interimText, error: liveError, durationMs, start, stop } = useLiveTranscription({
+  const { isRecording, connecting, interimText, error: liveError, durationMs, amplitude, finalWords, start, stop } = useLiveTranscription({
     onFinalTranscript: setTranscript,
   });
   const [error, setError] = useState('');
+  const micScale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.timing(micScale, {
+      toValue: isRecording ? 1 + Math.min(1, amplitude) * 0.18 : 1,
+      duration: 120,
+      useNativeDriver: true,
+    }).start();
+  }, [amplitude, isRecording, micScale]);
 
   async function startRecording() {
     setError('');
@@ -150,19 +161,21 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 24 }}>
       <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-        <Pressable
-          onPress={isRecording ? stopRecording : startRecording}
-          disabled={connecting}
-          style={{
-            width: 96, height: 96, borderRadius: 48,
-            backgroundColor: isRecording ? '#ef4444' : connecting ? '#e7e5e4' : COLORS.primary,
-            alignItems: 'center', justifyContent: 'center',
-            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 6,
-          }}>
-          {connecting
-            ? <ActivityIndicator color="#a8a29e" size="small" />
-            : <Feather name={isRecording ? 'square' : 'mic'} size={34} color="#ffffff" />}
-        </Pressable>
+        <Animated.View style={{ transform: [{ scale: micScale }] }}>
+          <Pressable
+            onPress={isRecording ? stopRecording : startRecording}
+            disabled={connecting}
+            style={{
+              width: 96, height: 96, borderRadius: 48,
+              backgroundColor: isRecording ? '#ef4444' : connecting ? '#e7e5e4' : COLORS.primary,
+              alignItems: 'center', justifyContent: 'center',
+              shadowColor: '#1c1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 6,
+            }}>
+            {connecting
+              ? <ActivityIndicator color="#a8a29e" size="small" />
+              : <Feather name={isRecording ? 'square' : 'mic'} size={34} color="#ffffff" />}
+          </Pressable>
+        </Animated.View>
         <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 18, color: '#1c1917', marginTop: 16 }}>
           {connecting ? 'Connecting…' : isRecording ? formatDuration(durationMs) : recordedUri ? 'Recording ready' : 'Tap to record'}
         </Text>
@@ -173,6 +186,11 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
             ? 'Play it back, re-record, or edit the transcript below.'
             : 'Record your thoughts out loud — transcribed live as you speak.'}
         </Text>
+        {isRecording && (
+          <View style={{ marginTop: 16 }}>
+            <Waveform amplitude={amplitude} active={isRecording} color={COLORS.primary} />
+          </View>
+        )}
       </View>
 
       {recordedUri && !isRecording && (
@@ -224,10 +242,12 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
             shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
           }}>
             {isRecording ? (
-              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: '#1c1917', lineHeight: 24 }}>
-                {transcript}
-                {interimText ? <Text style={{ color: '#a8a29e' }}>{transcript ? ' ' : ''}{interimText}</Text> : null}
-              </Text>
+              <AnimatedTranscript
+                words={finalWords}
+                interimText={interimText}
+                style={{ fontFamily: 'Inter_400Regular', fontSize: 16, lineHeight: 24 }}
+                interimStyle={{ color: '#a8a29e' }}
+              />
             ) : (
               <TextInput
                 style={{
