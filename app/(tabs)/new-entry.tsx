@@ -226,6 +226,7 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
           disabled={connecting}
           onPress={isRecording ? stopRecording : startRecording}
         />
+        <VoiceStatus isRecording={isRecording} />
         {/* TEMPORARY — latency diagnostics, remove once we've traced the lag.
             roundTrip = last audio chunk sent -> next transcript received.
             chunkGap = actual observed spacing between audio sends (should
@@ -238,6 +239,25 @@ function VoiceComposer({ transcript, setTranscript }: { transcript: string; setT
         )}
       </View>
     </View>
+  );
+}
+
+// "I'm listening…" under the orb while recording, with animated dots.
+function VoiceStatus({ isRecording }: { isRecording: boolean }) {
+  const [dots, setDots] = useState(1);
+
+  useEffect(() => {
+    if (!isRecording) return;
+    setDots(1);
+    const id = setInterval(() => setDots(d => (d % 3) + 1), 450);
+    return () => clearInterval(id);
+  }, [isRecording]);
+
+  if (!isRecording) return null;
+  return (
+    <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 14, color: COLORS.primary, marginTop: 14, minWidth: 140, textAlign: 'center' }}>
+      {"I'm listening"}{'.'.repeat(dots)}
+    </Text>
   );
 }
 

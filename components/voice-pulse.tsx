@@ -72,14 +72,14 @@ export function VoicePulseButton({
             pointerEvents="none"
             style={{
               position: 'absolute', width: SIZE, height: SIZE, borderRadius: SIZE / 2,
-              backgroundColor: '#ef4444', opacity: ring2Opacity, transform: [{ scale: ring2Scale }],
+              backgroundColor: COLORS.primary, opacity: ring2Opacity, transform: [{ scale: ring2Scale }],
             }}
           />
           <Animated.View
             pointerEvents="none"
             style={{
               position: 'absolute', width: SIZE, height: SIZE, borderRadius: SIZE / 2,
-              backgroundColor: '#ef4444', opacity: ring1Opacity, transform: [{ scale: ring1Scale }],
+              backgroundColor: COLORS.primary, opacity: ring1Opacity, transform: [{ scale: ring1Scale }],
             }}
           />
         </>
@@ -90,7 +90,7 @@ export function VoicePulseButton({
           disabled={disabled}
           style={{
             width: SIZE, height: SIZE, borderRadius: SIZE / 2,
-            backgroundColor: isRecording ? '#ef4444' : connecting ? '#e7e5e4' : COLORS.primary,
+            backgroundColor: isRecording ? COLORS.primaryDark : connecting ? '#e7e5e4' : COLORS.primary,
             alignItems: 'center', justifyContent: 'center',
             shadowColor: '#1c1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 6,
           }}>
