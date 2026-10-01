@@ -96,7 +96,7 @@ function TextComposer({
           color: '#1c1917', lineHeight: 30,
           textAlignVertical: 'top',
         }}
-        placeholder="What's on your mind today?"
+        placeholder="Say what you feel like"
         placeholderTextColor="#c4b9b0"
         value={content}
         onChangeText={setContent}
