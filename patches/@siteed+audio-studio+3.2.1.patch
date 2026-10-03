@@ -1,0 +1,28 @@
+diff --git a/node_modules/@siteed/audio-studio/ios/AudioStreamManager.swift b/node_modules/@siteed/audio-studio/ios/AudioStreamManager.swift
+index b4ab6ca..706af26 100644
+--- a/node_modules/@siteed/audio-studio/ios/AudioStreamManager.swift
++++ b/node_modules/@siteed/audio-studio/ios/AudioStreamManager.swift
+@@ -1009,7 +1009,7 @@ class AudioStreamManager: NSObject, AudioDeviceManagerDelegate {
+         autoResumeAfterInterruption = settings.autoResumeAfterInterruption
+         
+         // Enforce minimum interval to prevent excessive CPU usage
+-        emissionInterval = max(10.0, Double(settings.interval ?? 1000)) / 1000.0
++        emissionInterval = max(10.0, Double(settings.interval ?? 100)) / 1000.0
+         emissionIntervalAnalysis = max(10.0, Double(settings.intervalAnalysis ?? 500)) / 1000.0
+         lastEmissionTime = nil // Will be set when recording starts
+         lastEmissionTimeAnalysis = nil // Will be set when recording starts
+diff --git a/node_modules/@siteed/audio-studio/ios/RecordingSettings.swift b/node_modules/@siteed/audio-studio/ios/RecordingSettings.swift
+index e4544b9..5eafbbc 100644
+--- a/node_modules/@siteed/audio-studio/ios/RecordingSettings.swift
++++ b/node_modules/@siteed/audio-studio/ios/RecordingSettings.swift
+@@ -178,8 +178,8 @@ struct RecordingSettings {
+         // Parse core settings
+         settings.numberOfChannels = dict["channels"] as? Int ?? 1
+         settings.bitDepth = dict["bitDepth"] as? Int ?? 16
+-        settings.interval = dict["interval"] as? Int
+-        settings.intervalAnalysis = dict["intervalAnalysis"] as? Int
++        settings.interval = (dict["interval"] as? NSNumber)?.intValue
++        settings.intervalAnalysis = (dict["intervalAnalysis"] as? NSNumber)?.intValue
+         if let maxDurationNumber = dict["maxDurationMs"] as? NSNumber {
+             settings.maxDurationMs = maxDurationNumber.int64Value
+         }
