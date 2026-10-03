@@ -1,0 +1,46 @@
+name: EAS Update
+
+# Publishes JS-only changes over the air with EAS Update.
+# - Push to main            -> publishes to the "preview" channel
+# - Manual run (Actions tab) -> pick "preview" or "production"
+# Native changes (new native modules, app.json native config, SDK bumps) need a
+# new binary via `eas build`; an OTA update can't deliver those.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: EAS Update channel (branch) to publish to
+        type: choice
+        options: [preview, production]
+        default: preview
+
+concurrency:
+  group: eas-update-${{ github.event.inputs.channel || 'preview' }}
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      CHANNEL: ${{ github.event.inputs.channel || 'preview' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish update
+        run: eas update --channel "$CHANNEL" --message "${{ github.sha }}: ${{ github.event.head_commit.message || 'manual run' }}" --non-interactive
