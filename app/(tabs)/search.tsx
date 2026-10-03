@@ -513,7 +513,7 @@ export default function SearchScreen() {
         keyExtractor={item => `${item.type}-${item.id}`}
         ListHeaderComponent={listHeader}
         contentContainerStyle={{ paddingBottom: 130 }}
-        ItemSeparatorComponent={() => <View style={{ height: 10, marginHorizontal: 24 }} />}
+        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: feed.length === 0 ? 20 : 40, paddingHorizontal: 24 }}>
             {feed.length === 0 && <Text style={{ fontSize: 32, marginBottom: 10 }}>🕓</Text>}
@@ -541,12 +541,13 @@ export default function SearchScreen() {
           }
 
           return (
+            <View style={{ paddingHorizontal: 24 }}>
             <Pressable
               onPress={handlePress}
               style={({ pressed }) => ({
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
-                borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, marginHorizontal: 24,
+                borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14,
                 shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
               })}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
@@ -578,6 +579,7 @@ export default function SearchScreen() {
                 {formatRelative(item.created_at)}
               </Text>
             </Pressable>
+            </View>
           );
         }}
       />
