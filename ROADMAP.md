@@ -61,12 +61,43 @@ The next phase reframes the product around three loops instead of one:
    accuracy (from #4), time-to-recover after a hard entry, an attention pattern
    going from ×5 down to gone.
 
+## Proactive reminders (new feature area)
+
+9. **Escalating, personal nudges when the user misses their journaling time.**
+   Today a reminder is a one-shot push at a fixed time. Replace it with a short
+   escalation ladder that reaches out *after* the user has gone quiet, in a voice
+   that feels caring rather than nagging. People love reassurance and feeling
+   comforted at the moment they would otherwise skip journaling.
+
+   - **Stage 1 — personalized follow-up notification.** If the user has a 9:00
+     reminder and hasn't done anything by ~9:15, send a warm, personal push:
+     "Hey Nahush, what's happening — want to have a quick chat about your day?"
+     Tapping it opens straight into a talk-it-through chat. Copy should be
+     personalized (name, time of day, recent context from the Map of You) and
+     reassuring, not guilt-inducing.
+   - **Multi-day silence.** If the user misses several days in a row, the regular
+     reminder flow stops being useful. Switch to a different re-engagement flow:
+     softer tone, less frequent, check-in on how they're doing rather than
+     "you missed your journal." Exact cadence and tone logic still to be figured out.
+   - **Stage 2 — phone call.** Optionally, the user gets an actual phone call
+     instead of (or after) the push. They choose the delay after the missed
+     reminder (e.g. 15 or 30 minutes) and simply journal by talking on the call —
+     no app needed. Reuses the live-voice pipeline; the call becomes a normal entry.
+
+   Open questions: opt-in controls and quiet hours, per-stage settings, how many
+   attempts before backing off, telephony provider and cost, consent and
+   privacy for call recordings/transcripts, and what counts as "did something"
+   (opening the app vs. completing an entry).
+
 ## Sequencing notes
 
 - **Cheap, reuse existing data/pipeline:** #1–#3 build directly on the digest
   insights work already shipped.
 - **High payoff, modest scope:** #4.
 - **Bigger bets, likely the real differentiation:** #5 and #6.
+- **Retention lever, can ship independently:** #9. Stage 1 (personal follow-up
+  push) is small and reuses existing push infra; the phone call stage is the
+  larger lift (telephony integration).
 - **Cross-cutting requirement:** as the Map of You gets built, privacy needs to be
   a first-class feature (not just the PIN lock already in place) — this becomes an
   intensely sensitive profile.
