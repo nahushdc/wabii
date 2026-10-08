@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useAudioRecorder as useLiveAudioRecorder } from '@siteed/audio-studio';
 import { AudioModule } from 'expo-audio';
+import { useSharedValue } from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
 
 // English-only (Nova-3 monolingual) for now — the multilingual/code-switching
@@ -40,30 +41,17 @@ function base64ToBytes(base64: string): Uint8Array {
 
 export type TranscriptWord = { word: string; confidence: number };
 
-// Temporary latency instrumentation (remove once we've diagnosed perceived
-// voice-mode lag) — rolling averages of two numbers, surfaced in-app since
-// this build has no attached Metro/console to read logs from:
-//   roundTripMs: last audio chunk SENT -> next transcript message RECEIVED
-//                (covers network + Deepgram processing together)
-//   chunkGapMs:  actual observed time between successive audio sends
-//                (should track the configured 250ms interval — if it's
-//                consistently higher, the recorder itself is buffering/
-//                stalling before handing us chunks, independent of network)
-export type LiveTranscriptionDebugStats = {
-  lastRoundTripMs: number;
-  avgRoundTripMs: number;
-  avgChunkGapMs: number;
-  sampleCount: number;
-};
-
-function average(samples: number[]): number {
-  if (samples.length === 0) return 0;
-  return samples.reduce((a, b) => a + b, 0) / samples.length;
-}
-
-function pushSample(samples: number[], value: number, max = 20) {
-  samples.push(value);
-  if (samples.length > max) samples.shift();
+// RMS of a little-endian PCM16 chunk, normalized to [0,1].
+function pcmRms(bytes: Uint8Array): number {
+  const sampleCount = bytes.length >> 1;
+  if (sampleCount === 0) return 0;
+  let sumSquares = 0;
+  for (let i = 0; i < sampleCount; i++) {
+    let sample = bytes[i * 2] | (bytes[i * 2 + 1] << 8);
+    if (sample >= 32768) sample -= 65536;
+    sumSquares += sample * sample;
+  }
+  return Math.sqrt(sumSquares / sampleCount) / 32768;
 }
 
 // Shared live-transcription engine (WebSocket relay -> Deepgram) used by both
@@ -76,27 +64,25 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
   const [connecting, setConnecting] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [error, setError] = useState('');
-  const [amplitude, setAmplitude] = useState(0);
+  // A Reanimated shared value instead of React state: the native metering
+  // callback writes straight to it and the orb reads it on the UI thread, so
+  // voice level never triggers a re-render of the screen (or waits behind
+  // transcript/WebSocket work on the JS thread).
+  const amplitude = useSharedValue(0);
+  const peakRef = useRef(0.2);
   const [finalWords, setFinalWords] = useState<TranscriptWord[]>([]);
-  const [debugStats, setDebugStats] = useState<LiveTranscriptionDebugStats | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const finalTranscriptRef = useRef('');
   const finalWordsRef = useRef<TranscriptWord[]>([]);
-  const lastChunkSentAtRef = useRef<number | null>(null);
-  const roundTripSamplesRef = useRef<number[]>([]);
-  const chunkGapSamplesRef = useRef<number[]>([]);
 
   async function start() {
     setError('');
     setInterimText('');
-    setAmplitude(0);
+    amplitude.value = 0;
+    peakRef.current = 0.2;
     setFinalWords([]);
-    setDebugStats(null);
     finalTranscriptRef.current = '';
     finalWordsRef.current = [];
-    lastChunkSentAtRef.current = null;
-    roundTripSamplesRef.current = [];
-    chunkGapSamplesRef.current = [];
     try {
       const { granted } = await AudioModule.requestRecordingPermissionsAsync();
       if (!granted) { setError('Microphone access is needed to record.'); return; }
@@ -115,17 +101,6 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
           const alt = msg?.channel?.alternatives?.[0];
           const text = alt?.transcript ?? '';
           if (!text) return;
-
-          if (lastChunkSentAtRef.current != null) {
-            const roundTripMs = Date.now() - lastChunkSentAtRef.current;
-            pushSample(roundTripSamplesRef.current, roundTripMs);
-            setDebugStats({
-              lastRoundTripMs: roundTripMs,
-              avgRoundTripMs: Math.round(average(roundTripSamplesRef.current)),
-              avgChunkGapMs: Math.round(average(chunkGapSamplesRef.current)),
-              sampleCount: roundTripSamplesRef.current.length,
-            });
-          }
 
           if (msg.is_final) {
             finalTranscriptRef.current = `${finalTranscriptRef.current} ${text}`.trim();
@@ -157,34 +132,24 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
         sampleRate: 16000,
         channels: 1,
         encoding: 'pcm_16bit',
-        interval: 250,
+        // 100ms chunks. The native metering pipeline (enableProcessing) is
+        // deliberately OFF: with it on, chunks arrived ~1s apart despite a
+        // 250ms setting, so the orb level is computed from the streamed PCM
+        // instead.
+        interval: 100,
         output: { primary: { enabled: true, format: 'wav' } },
         onAudioStream: async (event) => {
           if (typeof event.data !== 'string') return;
           const bytes = base64ToBytes(event.data);
-          const now = Date.now();
-          if (lastChunkSentAtRef.current != null) {
-            pushSample(chunkGapSamplesRef.current, now - lastChunkSentAtRef.current);
-          }
-          lastChunkSentAtRef.current = now;
           if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(bytes);
-        },
-        // Native audio metering for the pulse orb, instead of hand-rolling RMS
-        // from the streamed PCM on the JS thread — computed on the native side
-        // at a much higher rate (intervalAnalysis) than the 4x/sec transcription
-        // chunking needs, so the orb actually tracks voice modulation.
-        enableProcessing: true,
-        intervalAnalysis: 60,
-        keepFullAnalysis: false,
-        onAudioAnalysis: async (event) => {
-          const points = event.dataPoints;
-          const latest = points?.[points.length - 1];
-          if (!latest) return;
-          // rms is already normalized to ~[0,1]; sqrt gives it a perceptual
-          // (log-ish) boost so quiet-to-loud speech reads as a visible swing
-          // instead of a barely-moving linear meter.
-          const level = Math.max(0, Math.min(1, Math.sqrt(latest.rms ?? 0) * 1.3));
-          setAmplitude(level);
+
+          const rms = pcmRms(bytes);
+          // Noise gate: room hiss shouldn't move the orb.
+          if (rms < 0.008) { amplitude.value = 0; return; }
+          // Adaptive normalization against the recent peak (slow decay), so
+          // quiet and loud speakers both get the full visual range.
+          peakRef.current = Math.max(rms, peakRef.current * 0.98, 0.08);
+          amplitude.value = Math.min(1, Math.sqrt(rms / peakRef.current));
         },
       });
     } catch (e: any) {
@@ -202,7 +167,7 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
       }
       socketRef.current = null;
       setInterimText('');
-      setAmplitude(0);
+      amplitude.value = 0;
       return result;
     } catch (e: any) {
       setError(e?.message ?? 'Could not finish that recording.');
@@ -210,5 +175,5 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
     }
   }
 
-  return { isRecording, connecting, interimText, error, durationMs, amplitude, finalWords, debugStats, start, stop };
+  return { isRecording, connecting, interimText, error, durationMs, amplitude, finalWords, start, stop };
 }
