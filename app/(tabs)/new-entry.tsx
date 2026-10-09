@@ -126,7 +126,7 @@ function TextComposer({
         />
       )}
 
-      <TagPicker selected={tags} onChange={setTags} />
+      {!dictation.isRecording && <TagPicker selected={tags} onChange={setTags} />}
 
       <View style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
