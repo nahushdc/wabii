@@ -1,6 +1,6 @@
 import { View, Pressable, ActivityIndicator } from 'react-native';
 import Animated, {
-  FadeIn, FadeOut, SharedValue, interpolateColor, useAnimatedStyle, useFrameCallback, useSharedValue,
+  Easing, FadeIn, FadeOut, SharedValue, interpolateColor, useAnimatedStyle, useFrameCallback, useSharedValue, withTiming,
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { COLORS } from '@/constants/colors';
@@ -9,15 +9,17 @@ const BAR_COUNT = 30;
 const BAR_WIDTH = 3.5;
 const MIN_BAR = 3.5; // at silence a bar is a round dot
 const MAX_BAR = 34;
-const SAMPLE_MS = 50; // how often the wave scrolls by one bar
+const SAMPLE_MS = 100; // how often the wave scrolls by one bar
 
-function WaveBar({ index, history }: { index: number; history: SharedValue<number[]> }) {
+function WaveBar({ index, history, live }: { index: number; history: SharedValue<number[]>; live?: SharedValue<number> }) {
   const style = useAnimatedStyle(() => {
-    const level = history.value[index] ?? 0;
-    // No easing on the height: the bars already step at 20Hz, and an extra
-    // animation on top just delays every reaction.
+    const level = live ? live.value : history.value[index] ?? 0;
+    const target = MIN_BAR + level * (MAX_BAR - MIN_BAR);
     return {
-      height: MIN_BAR + level * (MAX_BAR - MIN_BAR),
+      // Committed bars glide to their new height over exactly one scroll step
+      // instead of snapping, so the wave flows rather than jumps. The live
+      // bar is set directly so it reacts to your voice with no lag.
+      height: live ? target : withTiming(target, { duration: SAMPLE_MS, easing: Easing.linear }),
       backgroundColor: interpolateColor(level, [0.05, 0.3], ['#c4b9b0', '#57534e']),
     };
   });
@@ -30,31 +32,27 @@ function WaveBar({ index, history }: { index: number; history: SharedValue<numbe
 // falling more slowly — and is committed into the scrolling history every
 // SAMPLE_MS. Everything runs on the UI thread; the mic level is a shared value.
 function LiveWaveform({ amplitude }: { amplitude: SharedValue<number> }) {
-  const history = useSharedValue<number[]>(new Array(BAR_COUNT).fill(0));
-  const smoothed = useSharedValue(0);
+  const history = useSharedValue<number[]>(new Array(BAR_COUNT - 1).fill(0));
+  const live = useSharedValue(0);
   const elapsed = useSharedValue(0);
 
   useFrameCallback(info => {
     'worklet';
     const target = amplitude.value;
-    smoothed.value += (target - smoothed.value) * (target > smoothed.value ? 0.8 : 0.22);
+    live.value += (target - live.value) * (target > live.value ? 0.8 : 0.22);
     elapsed.value += info.timeSincePreviousFrame ?? 16;
-
-    let next: number[];
     if (elapsed.value >= SAMPLE_MS) {
       elapsed.value = 0;
-      next = history.value.slice(1);
-      next.push(smoothed.value);
-    } else {
-      next = history.value.slice();
-      next[BAR_COUNT - 1] = smoothed.value;
+      const next = history.value.slice(1);
+      next.push(live.value);
+      history.value = next;
     }
-    history.value = next;
   });
 
   return (
     <View style={{ flex: 1, height: MAX_BAR, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-      {Array.from({ length: BAR_COUNT }, (_, i) => <WaveBar key={i} index={i} history={history} />)}
+      {Array.from({ length: BAR_COUNT - 1 }, (_, i) => <WaveBar key={i} index={i} history={history} />)}
+      <WaveBar index={BAR_COUNT - 1} history={history} live={live} />
     </View>
   );
 }
