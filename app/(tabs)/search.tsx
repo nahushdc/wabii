@@ -513,7 +513,7 @@ export default function SearchScreen() {
         keyExtractor={item => `${item.type}-${item.id}`}
         ListHeaderComponent={listHeader}
         contentContainerStyle={{ paddingBottom: 130 }}
-        ItemSeparatorComponent={() => <View style={{ height: 10, marginHorizontal: 24 }} />}
+        ItemSeparatorComponent={() => <View style={{ height: 2 }} />}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: feed.length === 0 ? 20 : 40, paddingHorizontal: 24 }}>
             {feed.length === 0 && <Text style={{ fontSize: 32, marginBottom: 10 }}>🕓</Text>}
@@ -540,44 +540,44 @@ export default function SearchScreen() {
             else router.push(item.period === 'monthly' ? `/monthly-digest/${item.id}` : `/digest/${item.id}`);
           }
 
+          // Rows are flat (no card). Row visuals live in a plain View rendered through Pressable's
+          // children function — NOT in Pressable's `style` function. That
+          // style function is dropped on device by NativeWind's interop, which
+          // is what left rows with no card, no padding, and no side insets.
           return (
-            <Pressable
-              onPress={handlePress}
-              style={({ pressed }) => ({
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                backgroundColor: pressed ? '#f5f0eb' : '#ffffff',
-                borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, marginHorizontal: 24,
-                shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-              })}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                <View style={{
-                  width: 38, height: 38, borderRadius: 13, backgroundColor: style.chipBg,
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Feather name={style.icon} size={16} color={style.color} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{
-                    fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase',
-                    color: style.color, marginBottom: 3,
+            <View style={{ paddingHorizontal: 24 }}>
+              <Pressable onPress={handlePress}>
+                {({ pressed }) => (
+                  <View style={{
+                    flexDirection: 'row', alignItems: 'center',
+                    paddingVertical: 12, opacity: pressed ? 0.55 : 1,
                   }}>
-                    {tag}
-                  </Text>
-                  <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#292524' }} numberOfLines={1}>
-                    {label}
-                  </Text>
-                </View>
-              </View>
-              <Text
-                style={{
-                  fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 14, includeFontPadding: false,
-                  color: '#b3a89c', marginLeft: 14,
-                  flexShrink: 0, minWidth: 58, textAlign: 'right',
-                }}
-                numberOfLines={1}>
-                {formatRelative(item.created_at)}
-              </Text>
-            </Pressable>
+                    <View style={{
+                      width: 38, height: 38, borderRadius: 13, backgroundColor: style.chipBg,
+                      alignItems: 'center', justifyContent: 'center', marginRight: 12,
+                    }}>
+                      <Feather name={style.icon} size={16} color={style.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={{
+                          fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase',
+                          color: style.color, marginBottom: 3,
+                        }}
+                        numberOfLines={1}>
+                        {tag}
+                        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, letterSpacing: 0, textTransform: 'none', color: '#b3a89c' }}>
+                          {'  ·  '}{formatRelative(item.created_at)}
+                        </Text>
+                      </Text>
+                      <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#292524' }} numberOfLines={1}>
+                        {label}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </Pressable>
+            </View>
           );
         }}
       />
