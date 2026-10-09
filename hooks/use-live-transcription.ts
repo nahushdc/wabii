@@ -41,27 +41,6 @@ function base64ToBytes(base64: string): Uint8Array {
 
 export type TranscriptWord = { word: string; confidence: number };
 
-// Loudest 20ms-window RMS in a little-endian PCM16 chunk (16kHz), normalized
-// to [0,1]. Taking the loudest short window instead of the whole-chunk average
-// keeps syllable onsets sharp — averaging a 100ms chunk smears them flat.
-const LEVEL_WINDOW = 320;
-function pcmLevel(bytes: Uint8Array): number {
-  const sampleCount = bytes.length >> 1;
-  let loudest = 0;
-  for (let start = 0; start < sampleCount; start += LEVEL_WINDOW) {
-    const end = Math.min(start + LEVEL_WINDOW, sampleCount);
-    let sumSquares = 0;
-    for (let i = start; i < end; i++) {
-      let sample = bytes[i * 2] | (bytes[i * 2 + 1] << 8);
-      if (sample >= 32768) sample -= 65536;
-      sumSquares += sample * sample;
-    }
-    const rms = Math.sqrt(sumSquares / (end - start)) / 32768;
-    if (rms > loudest) loudest = rms;
-  }
-  return loudest;
-}
-
 // Shared live-transcription engine (WebSocket relay -> Deepgram) used by both
 // the new-entry voice composer and dictation-into-existing-text (e.g. entry
 // editing). `onFinalTranscript` fires with the FULL accumulated transcript
@@ -140,18 +119,26 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
         sampleRate: 16000,
         channels: 1,
         encoding: 'pcm_16bit',
-        // 100ms chunks. The native metering pipeline (enableProcessing) is
-        // deliberately OFF: with it on, chunks arrived ~1s apart despite a
-        // 250ms setting, so the orb level is computed from the streamed PCM
-        // instead.
         interval: 100,
         output: { primary: { enabled: true, format: 'wav' } },
         onAudioStream: async (event) => {
           if (typeof event.data !== 'string') return;
           const bytes = base64ToBytes(event.data);
           if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(bytes);
-
-          const level = pcmLevel(bytes);
+        },
+        // Native loudness metering for the waveform, emitted every 30ms over
+        // 30ms windows (the recorder's interval options are patched, see
+        // patches/, so these are actually honored now).
+        enableProcessing: true,
+        intervalAnalysis: 30,
+        segmentDurationMs: 30,
+        keepFullAnalysis: false,
+        onAudioAnalysis: async (event) => {
+          const points = event.dataPoints;
+          if (!points?.length) return;
+          // Loudest window in the batch, so syllable onsets stay sharp.
+          let level = 0;
+          for (const pt of points) if ((pt.rms ?? 0) > level) level = pt.rms;
           // Noise gate: room hiss shouldn't move the waveform.
           const GATE = 0.006;
           if (level < GATE) { amplitude.value = 0; return; }
