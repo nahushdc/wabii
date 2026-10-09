@@ -75,6 +75,93 @@ The next phase reframes the product around three loops instead of one:
   generating beautiful paragraphs about the user can feel profound while changing
   nothing.
 
+## In flight: operations & admin tooling (not yet committed)
+
+A separate track from the self-awareness work above: tooling so the owner can see
+how the app is used and tune its AI and notifications without a redeploy. Work was
+started in a parallel session and is sitting uncommitted in the working tree. None
+of it is live until the SQL is run and the functions are deployed.
+
+### 1. Admin dashboard (local-only web app)
+
+- **Decisions made:** a separate web app (not part of the mobile app), run locally
+  (no hosting), in a new `admin-dashboard/` folder. Stack: Vite + React + TypeScript,
+  Tailwind + shadcn/ui, Recharts, Supabase for data/auth/functions.
+- **Access:** only the owner's account. `admin_users` table + admin-only edge
+  functions that check it and use the service-role key; that key never reaches the
+  browser. Replaces the old "any signed-in user can edit `ai_prompts`" rule.
+- **Planned views:** users (total, signups/day, daily actives), voice usage
+  (transcriptions/day, minutes, estimated cost), Deepgram credit balance, live and
+  peak concurrency with a warning near the plan limit, prompt editor, notification
+  editor.
+- **Status:** backend pieces exist (below). The dashboard front end itself
+  (`admin-dashboard/`) has not been created yet; `.claude/launch.json` already
+  has a dev-server entry for it on port 5173.
+- **Still needed from the owner:** their Supabase user id (to seed `admin_users`),
+  a Deepgram API key with billing-read access (stored as a Supabase secret), and
+  their Deepgram plan's concurrent-stream limit (for the alert threshold).
+
+### 2. Backend pieces drafted (uncommitted)
+
+- **Database scripts** (`supabase/sql/`, each safe to re-run): `admin_foundation.sql`
+  (admin table, locks down `ai_prompts`), `voice_sessions.sql` (one row per live
+  transcription session), `admin_stats.sql` (user/usage aggregations, service-role
+  only), `ai_prompts_versioning.sql` (history of every prompt edit, with reset to
+  default), `notification_templates.sql` (editable notification zones and settings).
+- **Edge functions** (`supabase/functions/`): `admin-stats`, `admin-deepgram`,
+  `admin-prompts`, `admin-notifications`, plus shared helpers in `_shared/`
+  (admin check, prompt loading, built-in default prompts).
+- **Existing functions edited** (chat, journal-chat, weekly/monthly digest,
+  search-entries, suggest-pursuits, theme-insights): prompts now load from the
+  database with the old hardcoded text as the fallback.
+- **`transcribe-voice-live`:** now logs each session (start, end, status,
+  rejected connections) to `voice_sessions`. Usage and concurrency numbers only
+  begin from the day this ships; there is no history before it.
+- **Order to bring it live:** run the SQL (foundation first, then voice sessions,
+  stats, prompt versioning, notification templates), add the admin user row, set
+  secrets, deploy the functions, then build the dashboard.
+
+### 3. Editable notifications
+
+- **Zones:** three day zones set by the reminder's hour: morning (5am), afternoon
+  (12pm), evening (5pm, including late night). Title is the greeting; the body is
+  a gentle invitation to journal, rotated by day.
+- **Editable:** zone copy, start hours, and days-ahead window live in
+  `notification_zones` / `notification_settings`; `lib/reminder-notifications.ts`
+  (uncommitted rewrite) fetches them, caches the last good copy on the phone, and
+  falls back to built-in copy if offline. `send-reminders` (server push path) uses
+  the same zones.
+- **Open decision:** the built-in fallback copy in that rewrite is the older
+  generic wording ("Good Morning! 🌅 …"), not the warmer lines written earlier
+  (e.g. "A fresh page is waiting. What do you want to carry into today?"). Pick one
+  before committing.
+- **Limits:** notifications are scheduled locally on each phone, so the server
+  can't see delivery or open rates. Changing copy only reaches phones that have
+  the new app build and have re-synced reminders on foreground.
+
+### 4. Voice and dictation follow-ups
+
+- **Dictation in the journal composer** shipped (mic icon in the text composer,
+  live waveform). Remaining ideas: measure native audio latency and tune the
+  analysis interval if the waveform still feels delayed; optional Skia-based orb
+  (needs a native rebuild).
+- **Revisit the voice-session logging** once the dashboard exists, to confirm
+  concurrency numbers match what Deepgram reports.
+
+### 5. Tooling and housekeeping
+
+- **NativeWind and `Pressable`:** a `Pressable` whose `style` is a function
+  (pressed state) is silently dropped on device by NativeWind's interop, losing
+  padding, margins, and backgrounds. Fixed for Recent activity rows and the
+  digest deep-dive button; keep rows styled via a plain `View` inside the
+  children function. Audit any new `style={({ pressed }) => …}` usage.
+- **Dev build vs preview build:** both share the bundle id `com.nahush.wabii`;
+  installing a preview or TestFlight build over the development build makes the
+  app stop loading from Metro, so edits appear to do nothing. Use the development
+  build for day-to-day work.
+- **`.claude/launch.json`:** has an uncommitted `admin-dashboard` entry; commit it
+  with the dashboard.
+
 ## Already shipped (context)
 
 - Text / live-voice (Deepgram streaming) / talk-it-through chat entry capture

@@ -13,6 +13,9 @@
       "bundleIdentifier": "com.nahush.wabii",
       "config": {
         "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Wabii uses the microphone so you can journal out loud and see your words transcribed live."
       }
     },
     "android": {

@@ -29,40 +29,22 @@ type ReminderForScheduling = {
 const STORAGE_PATH = `${FileSystem.documentDirectory}reminder-notifications.json`;
 const DAYS_AHEAD = 14;
 
-// Notification copy varies by time of day instead of always saying "Time to
-// reflect" — a few variants per bucket, rotated by day so a whole 14-day
-// window doesn't say the exact same thing every morning.
+// Generic notification copy by time of day: one message per zone. A zone runs
+// from its start hour until the next one; hours before the first (late night)
+// belong to the last zone.
 const TIME_BUCKET_MESSAGES: { title: string; body: string }[][] = [
   // morning: 5am - 11:59am
-  [
-    { title: 'Good morning ☀️', body: 'A blank page and a fresh start — what\'s on your mind?' },
-    { title: 'Rise and reflect 🌅', body: 'Before the day runs off with you, a few words for yourself.' },
-    { title: 'Morning check-in ☕', body: 'How are you actually doing today?' },
-  ],
-  // midday: 12pm - 4:59pm
-  [
-    { title: 'Midday pause 🌤', body: 'A quick breather — what\'s been on your mind so far today?' },
-    { title: 'Halfway through 🌿', body: 'Take two minutes for yourself before the day carries on.' },
-    { title: 'Lunch break thoughts 🥪', body: 'Whatever\'s on your mind, it\'s got a home here.' },
-  ],
-  // evening: 5pm - 8:59pm
-  [
-    { title: 'Evening check-in 🌙', body: 'How did today actually feel?' },
-    { title: 'Winding down 🌆', body: 'Before you switch off, a moment to look back.' },
-    { title: 'End-of-day reflection ✨', body: 'What\'s one thing worth remembering about today?' },
-  ],
-  // night: 9pm - 4:59am
-  [
-    { title: 'Late night thoughts 🌌', body: 'Can\'t sleep, or just up late? Get it out of your head and onto the page.' },
-    { title: 'One more thing before bed 🌙', body: 'Sometimes the clearest thoughts come right before sleep.' },
-  ],
+  [{ title: 'Good Morning! 🌅', body: 'Time for your morning journaling session. How are you feeling today?' }],
+  // afternoon: 12pm - 4:59pm
+  [{ title: 'Afternoon Check-in 🌤️', body: 'How\'s your day going? Take a moment to reflect and journal.' }],
+  // evening (incl. late night): 5pm - 4:59am
+  [{ title: 'Evening Reflection 🌙', body: 'End your day with gratitude and reflection. What are you thankful for?' }],
 ];
 
 function timeBucketFor(hour: number): { title: string; body: string }[] {
   if (hour >= 5 && hour < 12) return TIME_BUCKET_MESSAGES[0];
   if (hour >= 12 && hour < 17) return TIME_BUCKET_MESSAGES[1];
-  if (hour >= 17 && hour < 21) return TIME_BUCKET_MESSAGES[2];
-  return TIME_BUCKET_MESSAGES[3];
+  return TIME_BUCKET_MESSAGES[2];
 }
 
 function toDateKey(date: Date): string {

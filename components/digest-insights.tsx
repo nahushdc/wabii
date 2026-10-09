@@ -73,16 +73,21 @@ export function DigestInsightsPanel({ insights }: { insights: DigestInsights | n
       <PatternList title="Worth noticing" icon="alert-circle" color="#C2410C" items={insights.attention_patterns} showCount />
 
       {cta && (
+        // Visuals sit in a plain View via the children function — Pressable's
+        // `style` function is dropped on device by NativeWind's interop.
         <Pressable
-          onPress={() => router.push(`/(tabs)/new-entry?seed=${encodeURIComponent(`I want to sit with this a bit more: ${cta.pattern.toLowerCase()}. `)}`)}
-          style={({ pressed }) => ({
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-            backgroundColor: pressed ? '#f5f0eb' : '#f7f4ef', borderRadius: 14, paddingVertical: 13, marginTop: 4,
-          })}>
-          <Feather name="compass" size={14} color="#78716c" />
-          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#44403c' }}>
-            Deep dive into "{cta.pattern}"
-          </Text>
+          onPress={() => router.push(`/(tabs)/new-entry?seed=${encodeURIComponent(`I want to sit with this a bit more: ${cta.pattern.toLowerCase()}. `)}`)}>
+          {({ pressed }) => (
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              backgroundColor: pressed ? '#f5f0eb' : '#f7f4ef', borderRadius: 14, paddingVertical: 13, marginTop: 4,
+            }}>
+              <Feather name="compass" size={14} color="#78716c" style={{ marginRight: 8 }} />
+              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#44403c' }}>
+                Deep dive into "{cta.pattern}"
+              </Text>
+            </View>
+          )}
         </Pressable>
       )}
     </View>
