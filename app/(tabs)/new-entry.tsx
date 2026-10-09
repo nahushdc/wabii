@@ -152,9 +152,8 @@ function TextComposer({
 
 // ---------- Keyboard-aware bottom inset ----------
 
-// Idle (no keyboard), the floating tab bar + FAB sit under the composer — give
-// them clearance. Once the keyboard is up, that chrome is out of the way, so
-// hug the keyboard instead of leaving a dead gap above it.
+// The tab bar and plus button are hidden on this page, so the composer only
+// needs to clear the home indicator — and hugs the keyboard once it's up.
 function useBottomInset() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
@@ -181,7 +180,7 @@ function useBottomInset() {
     };
   }, []);
 
-  return keyboardVisible ? 12 : 110;
+  return keyboardVisible ? 12 : 32;
 }
 
 // ---------- Screen ----------

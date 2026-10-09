@@ -1,6 +1,6 @@
 import { View, Pressable, ActivityIndicator } from 'react-native';
 import Animated, {
-  FadeIn, FadeOut, SharedValue, interpolateColor, useAnimatedStyle, useFrameCallback, useSharedValue, withTiming,
+  FadeIn, FadeOut, SharedValue, interpolateColor, useAnimatedStyle, useFrameCallback, useSharedValue,
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { COLORS } from '@/constants/colors';
@@ -8,24 +8,27 @@ import { COLORS } from '@/constants/colors';
 const BAR_COUNT = 30;
 const BAR_WIDTH = 3.5;
 const MIN_BAR = 3.5; // at silence a bar is a round dot
-const MAX_BAR = 28;
-const SAMPLE_MS = 70; // how often the wave scrolls by one bar
+const MAX_BAR = 34;
+const SAMPLE_MS = 50; // how often the wave scrolls by one bar
 
 function WaveBar({ index, history }: { index: number; history: SharedValue<number[]> }) {
   const style = useAnimatedStyle(() => {
     const level = history.value[index] ?? 0;
+    // No easing on the height: the bars already step at 20Hz, and an extra
+    // animation on top just delays every reaction.
     return {
-      height: withTiming(MIN_BAR + level * (MAX_BAR - MIN_BAR), { duration: 80 }),
+      height: MIN_BAR + level * (MAX_BAR - MIN_BAR),
       backgroundColor: interpolateColor(level, [0.05, 0.3], ['#c4b9b0', '#57534e']),
     };
   });
   return <Animated.View style={[{ width: BAR_WIDTH, borderRadius: BAR_WIDTH / 2 }, style]} />;
 }
 
-// A scrolling record of how loud you've been: each tick pushes the current
-// (smoothed) mic level in on the right and shifts everything left, so speech
-// shows up as tall bars travelling across and silence as a line of dots.
-// Everything runs on the UI thread — the mic level is a shared value.
+// A scrolling record of how loud you've been: speech shows up as tall bars
+// travelling left, silence as a line of dots. The newest (rightmost) bar is
+// live — it follows your voice every frame, rising almost instantly and
+// falling more slowly — and is committed into the scrolling history every
+// SAMPLE_MS. Everything runs on the UI thread; the mic level is a shared value.
 function LiveWaveform({ amplitude }: { amplitude: SharedValue<number> }) {
   const history = useSharedValue<number[]>(new Array(BAR_COUNT).fill(0));
   const smoothed = useSharedValue(0);
@@ -33,14 +36,19 @@ function LiveWaveform({ amplitude }: { amplitude: SharedValue<number> }) {
 
   useFrameCallback(info => {
     'worklet';
-    // Ease toward the latest reading so the 10Hz mic updates read as a
-    // continuous wave instead of stair-steps.
-    smoothed.value += (amplitude.value - smoothed.value) * 0.4;
+    const target = amplitude.value;
+    smoothed.value += (target - smoothed.value) * (target > smoothed.value ? 0.8 : 0.22);
     elapsed.value += info.timeSincePreviousFrame ?? 16;
-    if (elapsed.value < SAMPLE_MS) return;
-    elapsed.value = 0;
-    const next = history.value.slice(1);
-    next.push(smoothed.value);
+
+    let next: number[];
+    if (elapsed.value >= SAMPLE_MS) {
+      elapsed.value = 0;
+      next = history.value.slice(1);
+      next.push(smoothed.value);
+    } else {
+      next = history.value.slice();
+      next[BAR_COUNT - 1] = smoothed.value;
+    }
     history.value = next;
   });
 

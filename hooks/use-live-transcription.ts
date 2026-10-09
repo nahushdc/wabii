@@ -41,17 +41,25 @@ function base64ToBytes(base64: string): Uint8Array {
 
 export type TranscriptWord = { word: string; confidence: number };
 
-// RMS of a little-endian PCM16 chunk, normalized to [0,1].
-function pcmRms(bytes: Uint8Array): number {
+// Loudest 20ms-window RMS in a little-endian PCM16 chunk (16kHz), normalized
+// to [0,1]. Taking the loudest short window instead of the whole-chunk average
+// keeps syllable onsets sharp — averaging a 100ms chunk smears them flat.
+const LEVEL_WINDOW = 320;
+function pcmLevel(bytes: Uint8Array): number {
   const sampleCount = bytes.length >> 1;
-  if (sampleCount === 0) return 0;
-  let sumSquares = 0;
-  for (let i = 0; i < sampleCount; i++) {
-    let sample = bytes[i * 2] | (bytes[i * 2 + 1] << 8);
-    if (sample >= 32768) sample -= 65536;
-    sumSquares += sample * sample;
+  let loudest = 0;
+  for (let start = 0; start < sampleCount; start += LEVEL_WINDOW) {
+    const end = Math.min(start + LEVEL_WINDOW, sampleCount);
+    let sumSquares = 0;
+    for (let i = start; i < end; i++) {
+      let sample = bytes[i * 2] | (bytes[i * 2 + 1] << 8);
+      if (sample >= 32768) sample -= 65536;
+      sumSquares += sample * sample;
+    }
+    const rms = Math.sqrt(sumSquares / (end - start)) / 32768;
+    if (rms > loudest) loudest = rms;
   }
-  return Math.sqrt(sumSquares / sampleCount) / 32768;
+  return loudest;
 }
 
 // Shared live-transcription engine (WebSocket relay -> Deepgram) used by both
@@ -143,13 +151,17 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
           const bytes = base64ToBytes(event.data);
           if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(bytes);
 
-          const rms = pcmRms(bytes);
-          // Noise gate: room hiss shouldn't move the orb.
-          if (rms < 0.008) { amplitude.value = 0; return; }
-          // Adaptive normalization against the recent peak (slow decay), so
-          // quiet and loud speakers both get the full visual range.
-          peakRef.current = Math.max(rms, peakRef.current * 0.98, 0.08);
-          amplitude.value = Math.min(1, Math.sqrt(rms / peakRef.current));
+          const level = pcmLevel(bytes);
+          // Noise gate: room hiss shouldn't move the waveform.
+          const GATE = 0.006;
+          if (level < GATE) { amplitude.value = 0; return; }
+          // Adaptive normalization against the recent peak so quiet and loud
+          // speakers both get the full range. Short decay keeps it adapting
+          // quickly; the 0.8 curve preserves the gap between loud and soft
+          // syllables (a square root flattens everything toward the middle).
+          peakRef.current = Math.max(level, peakRef.current * 0.97, 0.05);
+          const normalized = Math.min(1, (level - GATE) / (peakRef.current - GATE));
+          amplitude.value = Math.pow(normalized, 0.8);
         },
       });
     } catch (e: any) {
