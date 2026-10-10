@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp, ZoomIn } from 'react-native-reanimated';
+import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 
@@ -13,7 +14,13 @@ const TAGS: { icon: keyof typeof Feather.glyphMap; label: string }[] = [
 ];
 
 export default function SearchOnboardingScreen() {
-  function handleContinue() {
+  async function handleContinue() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      // email is required if this upsert ever has to INSERT (no row yet for
+      // this id), same as the pursuits onboarding.
+      await supabase.from('users').upsert({ id: user.id, email: user.email, search_onboarding_seen: true });
+    }
     router.replace('/search-overlay');
   }
 

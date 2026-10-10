@@ -138,6 +138,15 @@ export default function HomeScreen() {
     );
   }
 
+  // The intro shows only the first time; after that search opens directly.
+  async function handleSearchPress() {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data } = user
+      ? await supabase.from('users').select('search_onboarding_seen').eq('id', user.id).maybeSingle()
+      : { data: null };
+    router.push(data?.search_onboarding_seen ? '/search-overlay' : '/search-onboarding');
+  }
+
   return (
     <WarmBackground>
       {/* Header */}
@@ -149,7 +158,7 @@ export default function HomeScreen() {
           {greetingEmoji}  Hey{firstName ? ` ${firstName}` : ' there'}
         </Text>
         <Pressable
-          onPress={() => router.push('/search-onboarding')}
+          onPress={handleSearchPress}
           hitSlop={10}
           style={{
             width: 40, height: 40, borderRadius: 20, backgroundColor: '#ffffff',
