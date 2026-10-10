@@ -43,3 +43,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/theme-insights/deno.json"
 entrypoint = "./functions/theme-insights/index.ts"
+
+[functions.delete-account]
+enabled = true
+verify_jwt = true
+import_map = "./functions/delete-account/deno.json"
+entrypoint = "./functions/delete-account/index.ts"

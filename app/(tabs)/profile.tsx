@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
@@ -106,6 +107,8 @@ export default function ProfileScreen() {
   const [streak, setStreak] = useState(0);
   const [totalEntries, setTotalEntries] = useState(0);
   const [totalWords, setTotalWords] = useState(0);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     async function fetchData() {
@@ -134,6 +137,40 @@ export default function ProfileScreen() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
+  }
+
+  function confirmDeleteAccount() {
+    Alert.alert(
+      'Delete your account?',
+      'This permanently deletes your account and everything in it: journal entries, reflections, tags, reminders and chats. It can\u2019t be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () =>
+            Alert.alert('Are you absolutely sure?', 'Your journal will be gone for good.', [
+              { text: 'Keep my account', style: 'cancel' },
+              { text: 'Delete everything', style: 'destructive', onPress: deleteAccount },
+            ]),
+        },
+      ]
+    );
+  }
+
+  async function deleteAccount() {
+    setDeleteError('');
+    setDeleting(true);
+    const { error } = await supabase.functions.invoke('delete-account', { body: { confirm: true } });
+    if (error) {
+      setDeleting(false);
+      setDeleteError('Could not delete your account. Please try again.');
+      return;
+    }
+    // The account is gone server-side: stop any reminders still scheduled on
+    // this phone, then drop the local session (the auth guard returns to log-in).
+    await Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
+    await supabase.auth.signOut({ scope: 'local' });
   }
 
   async function handlePursuitsPress() {
@@ -220,6 +257,18 @@ export default function ProfileScreen() {
               style={{ backgroundColor: '#fff1f0', borderRadius: 16, paddingVertical: 16, alignItems: 'center' }}>
               <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#ef4444' }}>Sign out</Text>
             </Pressable>
+
+            <Pressable
+              onPress={confirmDeleteAccount}
+              disabled={deleting}
+              style={{ paddingVertical: 18, alignItems: 'center', marginTop: 4 }}>
+              {deleting
+                ? <ActivityIndicator color="#a8a29e" />
+                : <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#a8a29e' }}>Delete account</Text>}
+            </Pressable>
+            {deleteError ? (
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444', textAlign: 'center' }}>{deleteError}</Text>
+            ) : null}
           </View>
         </>
       )}
