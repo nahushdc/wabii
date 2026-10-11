@@ -39,6 +39,13 @@ function formatDays(days: number[]) {
 
 const PROACTIVE_REMINDERS_FEATURE = 'proactive_reminders';
 
+const NUDGE_STEPS: { icon: keyof typeof Feather.glyphMap; title: string; when: string }[] = [
+  { icon: 'bell', title: 'Notification', when: 'At your reminder time' },
+  { icon: 'message-circle', title: 'WhatsApp or iMessage', when: '15 min later, if you haven\'t journaled' },
+  { icon: 'phone-call', title: 'Phone call', when: '15 min after that, if still nothing' },
+];
+
+
 export default function NotificationsScreen() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -212,14 +219,36 @@ export default function NotificationsScreen() {
               </Text>
             </View>
           </View>
-          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 17, color: '#ffffff', marginBottom: 8, lineHeight: 23 }}>
-            Proactive reminders are coming soon
+          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 17, color: '#ffffff', marginBottom: 16, lineHeight: 23 }}>
+            Proactive reminders
           </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13.5, color: '#c9c2ce', lineHeight: 20, marginBottom: 16 }}>
-            A three-step nudge for people who want to stay accountable to their journal. First, a notification
-            at your reminder time. If you haven't journaled within 15 minutes, we'll send a WhatsApp or iMessage.
-            And if there's still nothing, you'll get a call.
-          </Text>
+
+          {/* Three escalating nudges, drawn as a stepper */}
+          <View style={{ marginBottom: 18 }}>
+            {NUDGE_STEPS.map((step, i) => (
+              <View key={step.title} style={{ flexDirection: 'row' }}>
+                <View style={{ alignItems: 'center', marginRight: 14 }}>
+                  <View style={{
+                    width: 34, height: 34, borderRadius: 17,
+                    backgroundColor: 'rgba(232, 93, 44, 0.22)', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Feather name={step.icon} size={16} color="#F5A889" />
+                  </View>
+                  {i < NUDGE_STEPS.length - 1 && (
+                    <View style={{ width: 2, flex: 1, minHeight: 14, marginVertical: 4, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.14)' }} />
+                  )}
+                </View>
+                <View style={{ flex: 1, paddingBottom: i < NUDGE_STEPS.length - 1 ? 14 : 0, justifyContent: 'center' }}>
+                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14.5, color: '#ffffff', lineHeight: 20 }}>
+                    {step.title}
+                  </Text>
+                  <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12.5, color: '#c9c2ce', lineHeight: 18 }}>
+                    {step.when}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
           <Pressable
             onPress={handleNotifyMe}
             disabled={notifyLoading}
