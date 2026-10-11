@@ -173,9 +173,17 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
   async function stop() {
     try {
       const result = await stopLiveRecording();
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ type: 'CloseStream' }));
-        socketRef.current.close();
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN) {
+        // Ask Deepgram to flush, then wait (briefly) for it to close the
+        // stream — otherwise the last phrase, still unfinalized when you tap
+        // stop, is dropped. Messages arriving meanwhile are handled by onmessage.
+        await new Promise<void>(resolve => {
+          const timer = setTimeout(resolve, 1500);
+          socket.onclose = () => { clearTimeout(timer); resolve(); };
+          socket.send(JSON.stringify({ type: 'CloseStream' }));
+        });
+        socket.close();
       }
       socketRef.current = null;
       setInterimText('');

@@ -31,7 +31,7 @@ function WaveBar({ index, history, live }: { index: number; history: SharedValue
 // live — it follows your voice every frame, rising almost instantly and
 // falling more slowly — and is committed into the scrolling history every
 // SAMPLE_MS. Everything runs on the UI thread; the mic level is a shared value.
-function LiveWaveform({ amplitude }: { amplitude: SharedValue<number> }) {
+export function LiveWaveform({ amplitude }: { amplitude: SharedValue<number> }) {
   const history = useSharedValue<number[]>(new Array(BAR_COUNT - 1).fill(0));
   const live = useSharedValue(0);
   const elapsed = useSharedValue(0);

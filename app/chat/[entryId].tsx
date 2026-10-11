@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, FlatList, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, Pressable, FlatList, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { COLORS } from '@/constants/colors';
+import { useLiveTranscription } from '@/hooks/use-live-transcription';
+import { LiveWaveform } from '@/components/voice-pulse';
 
 type Message = {
   id: string;
@@ -29,6 +32,51 @@ export default function ChatScreen() {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
   const listRef = useRef<FlatList>(null);
+
+  // inputRef mirrors `input` so dictation callbacks (which can fire after a
+  // render) always read the latest text.
+  const inputRef = useRef('');
+  function updateInput(value: string) {
+    inputRef.current = value;
+    setInput(value);
+  }
+
+  // Dictation appends speech onto whatever was already typed: `base` is the
+  // text as it stood when the mic was tapped, and each finalized phrase
+  // replaces the session transcript, so base + transcript is the full text.
+  const dictationBaseRef = useRef('');
+  const live = useLiveTranscription({
+    onFinalTranscript: (sessionTranscript) => {
+      const base = dictationBaseRef.current;
+      const sep = base && sessionTranscript && !/\s$/.test(base) ? ' ' : '';
+      updateInput(`${base}${sep}${sessionTranscript}`);
+    },
+  });
+
+  async function startDictation() {
+    Keyboard.dismiss();
+    dictationBaseRef.current = inputRef.current;
+    await live.start();
+  }
+
+  async function stopDictation() {
+    await live.stop();
+  }
+
+  async function cancelDictation() {
+    await live.stop();
+    updateInput(dictationBaseRef.current);
+  }
+
+  async function sendDictation() {
+    await live.stop();
+    await handleSend();
+  }
+
+  // Leaving the screen mid-dictation shouldn't leave the mic open.
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  useEffect(() => () => { if (liveRef.current.isRecording) liveRef.current.stop(); }, []);
 
   useEffect(() => {
     async function load() {
@@ -73,10 +121,10 @@ export default function ChatScreen() {
   }, [entryId]);
 
   async function handleSend() {
-    const text = input.trim();
+    const text = inputRef.current.trim();
     if (!text || sending) return;
     setError('');
-    setInput('');
+    updateInput('');
     setMessages(prev => [...prev, { id: tempId(), role: 'user', content: text }]);
     setSending(true);
 
@@ -160,39 +208,104 @@ export default function ChatScreen() {
         ) : null}
       />
 
-      {error ? (
+      {(error || live.error) ? (
         <View style={{ marginHorizontal: 20, marginBottom: 8, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || live.error}</Text>
         </View>
       ) : null}
 
-      {/* Input */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8 }}>
+      {/* Input — one rounded card: text on top, actions along the bottom.
+          Idle: mic + send. While dictating: cancel, live waveform, stop
+          (keep the text to edit) and send (stop and send straight away). */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 }}>
         <View style={{
-          flexDirection: 'row', alignItems: 'flex-end',
-          backgroundColor: '#ffffff', borderRadius: 20,
-          paddingHorizontal: 16, paddingVertical: 8,
+          backgroundColor: '#ffffff', borderRadius: 28,
+          paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10,
           shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
-          gap: 10,
+          shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
         }}>
-          <TextInput
-            style={{ flex: 1, paddingVertical: 8, fontFamily: 'Inter_400Regular', fontSize: 15, color: '#1c1917', maxHeight: 100 }}
-            placeholder="What's coming up for you?"
-            placeholderTextColor="#c4b9b0"
-            value={input}
-            onChangeText={setInput}
-            multiline
-          />
-          <Pressable
-            onPress={handleSend}
-            disabled={!input.trim() || sending}
-            style={{
-              backgroundColor: input.trim() && !sending ? '#E85D2C' : '#e7e5e4',
-              borderRadius: 10, padding: 8, marginBottom: 2,
+          {live.isRecording ? (
+            <Text style={{
+              fontFamily: 'Inter_400Regular', fontSize: 16, lineHeight: 23, color: '#1c1917',
+              minHeight: 46, maxHeight: 140,
             }}>
-            <Feather name="arrow-up" size={16} color="white" />
-          </Pressable>
+              {input}
+              {live.interimText
+                ? <Text style={{ color: '#a8a29e' }}>{input && !/\s$/.test(input) ? ' ' : ''}{live.interimText}</Text>
+                : null}
+              {!input && !live.interimText ? <Text style={{ color: '#c4b9b0' }}>Listening…</Text> : null}
+            </Text>
+          ) : (
+            <TextInput
+              style={{
+                fontFamily: 'Inter_400Regular', fontSize: 16, lineHeight: 23, color: '#1c1917',
+                minHeight: 46, maxHeight: 140, paddingTop: 0, paddingBottom: 0,
+              }}
+              placeholder="What's coming up for you?"
+              placeholderTextColor="#c4b9b0"
+              value={input}
+              onChangeText={updateInput}
+              multiline
+            />
+          )}
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+            {live.isRecording ? (
+              <>
+                <Pressable
+                  onPress={cancelDictation}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel dictation"
+                  style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0ebe3', alignItems: 'center', justifyContent: 'center' }}>
+                  <Feather name="x" size={18} color="#57534e" />
+                </Pressable>
+
+                <View style={{ flex: 1, marginHorizontal: 4 }}>
+                  <LiveWaveform amplitude={live.amplitude} />
+                </View>
+
+                <Pressable
+                  onPress={stopDictation}
+                  accessibilityRole="button"
+                  accessibilityLabel="Stop recording"
+                  style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0ebe3', alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ width: 13, height: 13, borderRadius: 3, backgroundColor: '#1c1917' }} />
+                </Pressable>
+                <Pressable
+                  onPress={sendDictation}
+                  disabled={sending}
+                  accessibilityRole="button"
+                  accessibilityLabel="Stop and send"
+                  style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' }}>
+                  <Feather name="arrow-up" size={20} color="#ffffff" />
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Pressable
+                  onPress={startDictation}
+                  disabled={live.connecting || sending}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dictate with your voice"
+                  style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0ebe3', alignItems: 'center', justifyContent: 'center' }}>
+                  {live.connecting
+                    ? <ActivityIndicator color="#a8a29e" size="small" />
+                    : <Feather name="mic" size={19} color="#57534e" />}
+                </Pressable>
+                <Pressable
+                  onPress={handleSend}
+                  disabled={!input.trim() || sending}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send"
+                  style={{
+                    width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: input.trim() && !sending ? COLORS.primary : '#e7e5e4',
+                  }}>
+                  <Feather name="arrow-up" size={20} color="#ffffff" />
+                </Pressable>
+              </>
+            )}
+          </View>
         </View>
       </View>
 
