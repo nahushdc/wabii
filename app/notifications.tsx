@@ -216,9 +216,9 @@ export default function NotificationsScreen() {
             Proactive reminders are coming soon
           </Text>
           <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13.5, color: '#c9c2ce', lineHeight: 20, marginBottom: 16 }}>
-            Instead of a silent push notification, we'll nudge you on iMessage — or have a voice bot actually
-            call you — to keep you accountable to writing. Building the habit of thought-dumping matters more
-            than any single entry.
+            A three-step nudge for people who want to stay accountable to their journal. First, a notification
+            at your reminder time. If you haven't journaled within 15 minutes, we'll send a WhatsApp or iMessage.
+            And if there's still nothing, you'll get a call.
           </Text>
           <Pressable
             onPress={handleNotifyMe}
