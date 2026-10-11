@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, FlatList, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { View, Text, TextInput, Pressable, FlatList, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
@@ -17,6 +18,12 @@ type Message = {
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
+
+// One line to start (matches the 38px buttons), growing to three lines.
+const LINE_HEIGHT = 22;
+const BUTTON = 38;
+const INPUT_MIN_HEIGHT = LINE_HEIGHT + 16;
+const INPUT_MAX_HEIGHT = LINE_HEIGHT * 3 + 16;
 
 let tempIdCounter = 0;
 function tempId() {
@@ -77,6 +84,20 @@ export default function ChatScreen() {
   const liveRef = useRef(live);
   liveRef.current = live;
   useEffect(() => () => { if (liveRef.current.isRecording) liveRef.current.stop(); }, []);
+
+  // With the keyboard up there's no home-indicator gap to leave; without it,
+  // clear the safe area. Keeps the input snug against whatever is below it.
+  const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+  const dictationScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     async function load() {
@@ -153,7 +174,7 @@ export default function ChatScreen() {
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
+      keyboardVerticalOffset={0}>
 
       {/* Header */}
       <View style={{
@@ -180,7 +201,7 @@ export default function ChatScreen() {
         ref={listRef}
         data={messages}
         keyExtractor={item => item.id}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 16, gap: 10 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 8, gap: 10 }}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         renderItem={({ item }) => (
           <View style={{
@@ -214,49 +235,38 @@ export default function ChatScreen() {
         </View>
       ) : null}
 
-      {/* Input — one rounded card: text on top, actions along the bottom.
-          Idle: mic + send. While dictating: cancel, live waveform, stop
-          (keep the text to edit) and send (stop and send straight away). */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 }}>
+      {/* Input — a single-line pill that grows up to three lines as you type.
+          Idle: text + mic + send on one row. While dictating, the live text
+          sits above a row with cancel, the waveform, stop (keep the text to
+          edit) and send (stop and send straight away). */}
+      <View style={{ paddingHorizontal: 12, paddingTop: 6 }}>
         <View style={{
-          backgroundColor: '#ffffff', borderRadius: 28,
-          paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10,
+          backgroundColor: '#ffffff', borderRadius: 26,
+          paddingLeft: 18, paddingRight: 8, paddingVertical: 8,
           shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 },
           shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
         }}>
           {live.isRecording ? (
-            <Text style={{
-              fontFamily: 'Inter_400Regular', fontSize: 16, lineHeight: 23, color: '#1c1917',
-              minHeight: 46, maxHeight: 140,
-            }}>
-              {input}
-              {live.interimText
-                ? <Text style={{ color: '#a8a29e' }}>{input && !/\s$/.test(input) ? ' ' : ''}{live.interimText}</Text>
-                : null}
-              {!input && !live.interimText ? <Text style={{ color: '#c4b9b0' }}>Listening…</Text> : null}
-            </Text>
-          ) : (
-            <TextInput
-              style={{
-                fontFamily: 'Inter_400Regular', fontSize: 16, lineHeight: 23, color: '#1c1917',
-                minHeight: 46, maxHeight: 140, paddingTop: 0, paddingBottom: 0,
-              }}
-              placeholder="What's coming up for you?"
-              placeholderTextColor="#c4b9b0"
-              value={input}
-              onChangeText={updateInput}
-              multiline
-            />
-          )}
+            <>
+              <ScrollView
+                ref={dictationScrollRef}
+                style={{ maxHeight: INPUT_MAX_HEIGHT - 16, marginBottom: 8, marginRight: 10 }}
+                onContentSizeChange={() => dictationScrollRef.current?.scrollToEnd({ animated: false })}>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 16, lineHeight: LINE_HEIGHT, color: '#1c1917' }}>
+                  {input}
+                  {live.interimText
+                    ? <Text style={{ color: '#a8a29e' }}>{input && !/\s$/.test(input) ? ' ' : ''}{live.interimText}</Text>
+                    : null}
+                  {!input && !live.interimText ? <Text style={{ color: '#c4b9b0' }}>Listening…</Text> : null}
+                </Text>
+              </ScrollView>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
-            {live.isRecording ? (
-              <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Pressable
                   onPress={cancelDictation}
                   accessibilityRole="button"
                   accessibilityLabel="Cancel dictation"
-                  style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0ebe3', alignItems: 'center', justifyContent: 'center' }}>
+                  style={{ width: BUTTON, height: BUTTON, borderRadius: BUTTON / 2, backgroundColor: '#f0ebe3', alignItems: 'center', justifyContent: 'center' }}>
                   <Feather name="x" size={18} color="#57534e" />
                 </Pressable>
 
@@ -268,7 +278,7 @@ export default function ChatScreen() {
                   onPress={stopDictation}
                   accessibilityRole="button"
                   accessibilityLabel="Stop recording"
-                  style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0ebe3', alignItems: 'center', justifyContent: 'center' }}>
+                  style={{ width: BUTTON, height: BUTTON, borderRadius: BUTTON / 2, backgroundColor: '#f0ebe3', alignItems: 'center', justifyContent: 'center' }}>
                   <View style={{ width: 13, height: 13, borderRadius: 3, backgroundColor: '#1c1917' }} />
                 </Pressable>
                 <Pressable
@@ -276,41 +286,53 @@ export default function ChatScreen() {
                   disabled={sending}
                   accessibilityRole="button"
                   accessibilityLabel="Stop and send"
-                  style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' }}>
+                  style={{ width: BUTTON, height: BUTTON, borderRadius: BUTTON / 2, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' }}>
                   <Feather name="arrow-up" size={20} color="#ffffff" />
                 </Pressable>
-              </>
-            ) : (
-              <>
-                <Pressable
-                  onPress={startDictation}
-                  disabled={live.connecting || sending}
-                  accessibilityRole="button"
-                  accessibilityLabel="Dictate with your voice"
-                  style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0ebe3', alignItems: 'center', justifyContent: 'center' }}>
-                  {live.connecting
-                    ? <ActivityIndicator color="#a8a29e" size="small" />
-                    : <Feather name="mic" size={19} color="#57534e" />}
-                </Pressable>
-                <Pressable
-                  onPress={handleSend}
-                  disabled={!input.trim() || sending}
-                  accessibilityRole="button"
-                  accessibilityLabel="Send"
-                  style={{
-                    width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: input.trim() && !sending ? COLORS.primary : '#e7e5e4',
-                  }}>
-                  <Feather name="arrow-up" size={20} color="#ffffff" />
-                </Pressable>
-              </>
-            )}
-          </View>
+              </View>
+            </>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+              <TextInput
+                style={{
+                  flex: 1, fontFamily: 'Inter_400Regular', fontSize: 16, lineHeight: LINE_HEIGHT, color: '#1c1917',
+                  minHeight: INPUT_MIN_HEIGHT, maxHeight: INPUT_MAX_HEIGHT,
+                  paddingTop: 8, paddingBottom: 8, paddingHorizontal: 0,
+                }}
+                placeholder="What's coming up for you?"
+                placeholderTextColor="#c4b9b0"
+                value={input}
+                onChangeText={updateInput}
+                multiline
+              />
+              <Pressable
+                onPress={startDictation}
+                disabled={live.connecting || sending}
+                accessibilityRole="button"
+                accessibilityLabel="Dictate with your voice"
+                style={{ width: BUTTON, height: BUTTON, borderRadius: BUTTON / 2, backgroundColor: '#f0ebe3', alignItems: 'center', justifyContent: 'center' }}>
+                {live.connecting
+                  ? <ActivityIndicator color="#a8a29e" size="small" />
+                  : <Feather name="mic" size={19} color="#57534e" />}
+              </Pressable>
+              <Pressable
+                onPress={handleSend}
+                disabled={!input.trim() || sending}
+                accessibilityRole="button"
+                accessibilityLabel="Send"
+                style={{
+                  width: BUTTON, height: BUTTON, borderRadius: BUTTON / 2, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: input.trim() && !sending ? COLORS.primary : '#e7e5e4',
+                }}>
+                <Feather name="arrow-up" size={20} color="#ffffff" />
+              </Pressable>
+            </View>
+          )}
         </View>
       </View>
 
       {/* Disclaimer */}
-      <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
+      <View style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: keyboardVisible ? 6 : Math.max(insets.bottom, 12) }}>
         <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 10, color: '#c4b9b0', textAlign: 'center', lineHeight: 14 }}>
           Wabii is an AI companion, not a licensed therapist. In a crisis, please contact a professional or call 988.
         </Text>
