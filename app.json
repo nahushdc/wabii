@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nahush.wabii",
+      "bundleIdentifier": "com.wabiiapp.wabii",
       "config": {
         "usesNonExemptEncryption": false
       },
