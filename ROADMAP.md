@@ -162,6 +162,25 @@ of it is live until the SQL is run and the functions are deployed.
 - **`.claude/launch.json`:** has an uncommitted `admin-dashboard` entry; commit it
   with the dashboard.
 
+### 6. AI accountability companion (planned, not built)
+
+A companion that helps people stay accountable to journaling and rebuild a lapsed
+streak, rather than relying on a silent push notification.
+
+- **Escalating nudge:** a notification at the reminder time; if there's no entry
+  within 15 minutes, a WhatsApp or iMessage message; if still nothing, a phone
+  call. This is the "Proactive reminders" card on the Reminders screen, currently
+  marked "Pro · Coming soon" and collecting interest in `feature_interest`
+  (`proactive_reminders`).
+- **Home nudge, deliberately off for now:** after 3 or more days without an entry
+  the home screen would show a quiet card under the streak pill ("Enable an AI
+  companion to help you stay accountable and build your streak") with an
+  "Enable companion" button into the waiting list. Designed and mocked up, but not
+  shipped; turn it on when the companion exists.
+- **Open questions:** which channels at launch (WhatsApp vs iMessage vs call),
+  consent and phone-number collection, quiet hours and a clear way to opt out,
+  per-message and per-call cost, and whether this sits behind a paid plan.
+
 ## Already shipped (context)
 
 - Text / live-voice (Deepgram streaming) / talk-it-through chat entry capture
