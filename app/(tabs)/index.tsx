@@ -176,16 +176,18 @@ export default function HomeScreen() {
         <View style={{ position: 'absolute' }}>
           <SpinningRing size={blobSize} />
         </View>
-        {/* The plus sits exactly at the ring's centre; the word hangs below it. */}
-        <Feather name="plus" size={60} color={COLORS.primary} />
-        <View style={{ position: 'absolute', left: 0, right: 0, top: blobSize / 2 + 44, height: 24, alignItems: 'center', justifyContent: 'center' }}>
-          <Animated.Text
-            key={CHECK_IN_WORDS[wordIndex]}
-            entering={FadeIn.duration(400)}
-            exiting={FadeOut.duration(250)}
-            style={{ position: 'absolute', fontFamily: 'Inter_600SemiBold', fontSize: 17, color: '#1c1917' }}>
-            {CHECK_IN_WORDS[wordIndex]}
-          </Animated.Text>
+        {/* The plus and the cycling word are centred together as one group. */}
+        <View style={{ alignItems: 'center', gap: 6 }}>
+          <Feather name="plus" size={54} color={COLORS.primary} />
+          <View style={{ height: 22, minWidth: 120, alignItems: 'center', justifyContent: 'center' }}>
+            <Animated.Text
+              key={CHECK_IN_WORDS[wordIndex]}
+              entering={FadeIn.duration(400)}
+              exiting={FadeOut.duration(250)}
+              style={{ position: 'absolute', fontFamily: 'Inter_600SemiBold', fontSize: 17, color: '#1c1917' }}>
+              {CHECK_IN_WORDS[wordIndex]}
+            </Animated.Text>
+          </View>
         </View>
       </Pressable>
 
