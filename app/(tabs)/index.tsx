@@ -5,7 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
-import { MoodBlob } from '@/components/mood-blob';
+import { SpinningRing } from '@/components/spinning-ring';
 import { COLORS } from '@/constants/colors';
 import { calculateStreak } from '@/lib/streak';
 
@@ -174,10 +174,16 @@ export default function HomeScreen() {
         accessibilityLabel={`${CHECK_IN_WORDS[wordIndex]}. Start a new entry.`}
         style={{ width: blobSize, height: blobSize, alignItems: 'center', justifyContent: 'center', marginTop: 34 }}>
         <View style={{ position: 'absolute' }}>
-          <MoodBlob size={blobSize} />
+          <SpinningRing size={blobSize} />
         </View>
-        <Feather name="plus" size={34} color="#1c1917" />
-        <View style={{ height: 22, marginTop: 4, alignItems: 'center', justifyContent: 'center', width: blobSize }}>
+        <View style={{
+          width: 84, height: 84, borderRadius: 42, backgroundColor: COLORS.primary,
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 10, elevation: 5,
+        }}>
+          <Feather name="plus" size={38} color="#ffffff" />
+        </View>
+        <View style={{ height: 22, marginTop: 14, alignItems: 'center', justifyContent: 'center', width: blobSize }}>
           <Animated.Text
             key={CHECK_IN_WORDS[wordIndex]}
             entering={FadeIn.duration(400)}
