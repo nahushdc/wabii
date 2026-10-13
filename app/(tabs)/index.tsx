@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
 import { View, Text, SectionList, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { router, useFocusEffect } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
-import { SpinningRing } from '@/components/spinning-ring';
+import { MoodBlob } from '@/components/mood-blob';
 import { COLORS } from '@/constants/colors';
 import { calculateStreak } from '@/lib/streak';
 
@@ -18,6 +19,8 @@ type Section = {
   title: string;
   data: Entry[];
 };
+
+const CHECK_IN_WORDS = ['Check in', 'Rant', 'Vent', 'Yap', 'Reflect'];
 
 function getTimeOfDayPhrase() {
   const hour = new Date().getHours();
@@ -107,6 +110,12 @@ export default function HomeScreen() {
   const [firstName, setFirstName] = useState('');
   const [streak, setStreak] = useState(0);
   const timeOfDay = getTimeOfDayPhrase();
+  const [wordIndex, setWordIndex] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setWordIndex(i => (i + 1) % CHECK_IN_WORDS.length), 2600);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -152,15 +161,15 @@ export default function HomeScreen() {
     router.push(data?.search_onboarding_seen ? '/search-overlay' : '/search-onboarding');
   }
 
-  const ringSize = 230;
+  const blobSize = 200;
 
   const hero = (
-    <View style={{ alignItems: 'center', paddingTop: 20, paddingBottom: 8 }}>
-      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 16, color: '#78716c', marginBottom: 6 }}>
+    <View style={{ alignItems: 'center', paddingTop: 20, paddingBottom: 72 }}>
+      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 18, color: '#57534e', marginBottom: 4 }}>
         Hey{firstName ? ` ${firstName}` : ' there'},
       </Text>
       <Text style={{
-        fontFamily: 'Inter_700Bold', fontSize: 31, lineHeight: 38, color: '#1c1917',
+        fontFamily: 'Inter_700Bold', fontSize: 24, lineHeight: 30, color: '#1c1917',
         textAlign: 'center', paddingHorizontal: 20,
       }}>
         How are you feeling {timeOfDay}?
@@ -169,34 +178,39 @@ export default function HomeScreen() {
       <Pressable
         onPress={() => router.push('/(tabs)/new-entry')}
         accessibilityRole="button"
-        accessibilityLabel="Let it out. Start a new entry."
-        style={{ width: ringSize, height: ringSize, alignItems: 'center', justifyContent: 'center', marginTop: 32 }}>
+        accessibilityLabel={`${CHECK_IN_WORDS[wordIndex]}. Start a new entry.`}
+        style={{ width: blobSize, height: blobSize, alignItems: 'center', justifyContent: 'center', marginTop: 34 }}>
         <View style={{ position: 'absolute' }}>
-          <SpinningRing size={ringSize} />
+          <MoodBlob size={blobSize} />
         </View>
-        <Feather name="plus" size={34} color={COLORS.primary} />
-        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 17, color: COLORS.primary, marginTop: 6 }}>
-          Let it out
-        </Text>
+        <Feather name="plus" size={34} color="#1c1917" />
+        <View style={{ height: 22, marginTop: 4, alignItems: 'center', justifyContent: 'center', width: blobSize }}>
+          <Animated.Text
+            key={CHECK_IN_WORDS[wordIndex]}
+            entering={FadeIn.duration(400)}
+            exiting={FadeOut.duration(250)}
+            style={{ position: 'absolute', fontFamily: 'Inter_600SemiBold', fontSize: 17, color: '#1c1917' }}>
+            {CHECK_IN_WORDS[wordIndex]}
+          </Animated.Text>
+        </View>
       </Pressable>
 
-      {streak > 0 ? (
+      {hasEntries ? (
         <View style={{
-          flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 24,
-          backgroundColor: '#F5CBB6', borderRadius: 22, paddingHorizontal: 18, paddingVertical: 11,
+          flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 28,
+          borderWidth: 1, borderColor: streak > 0 ? 'rgba(232, 93, 44, 0.5)' : 'rgba(28, 25, 23, 0.18)',
+          borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8,
         }}>
-          <Ionicons name="flame-outline" size={18} color={COLORS.primary} />
-          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 15, color: '#1c1917' }}>
-            {streak} day{streak === 1 ? '' : 's'} streak
+          <Ionicons name="flame-outline" size={16} color={streak > 0 ? COLORS.primary : '#a8a29e'} />
+          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13.5, color: streak > 0 ? '#57534e' : '#a8a29e' }}>
+            {streak} day streak
           </Text>
         </View>
-      ) : !hasEntries ? (
-        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', marginTop: 24, textAlign: 'center' }}>
+      ) : (
+        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', marginTop: 28, textAlign: 'center' }}>
           Whatever's on your mind — get it out.
         </Text>
-      ) : null}
-
-      <View style={{ height: 12 }} />
+      )}
     </View>
   );
 
