@@ -5,7 +5,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 // Colours in ring order; neighbours in this order sit in neighbouring corners.
-const RING_COLORS = ['#F8D56B', '#F4A394', '#8DB9EE', '#8FD3A4'];
+const RING_COLORS = ['#FFC72C', '#FF6F61', '#3D9BFF', '#2FCF8E'];
 const CORNERS: { top?: number; bottom?: number; left?: number; right?: number }[] = [
   { top: 0, left: 0 },
   { top: 0, right: 0 },
@@ -28,7 +28,7 @@ function SoftPatch({ size, color }: { size: number; color: string }) {
               position: 'absolute',
               left: (size - d) / 2, top: (size - d) / 2,
               width: d, height: d, borderRadius: d / 2,
-              backgroundColor: color, opacity: 0.14,
+              backgroundColor: color, opacity: 0.22,
             }}
           />
         );
@@ -90,10 +90,10 @@ export function MoodBlob({ size = 200 }: { size?: number }) {
     <Animated.View
       pointerEvents="none"
       shouldRasterizeIOS
-      style={[{ width: size, height: size, overflow: 'hidden', backgroundColor: '#FBF1E6' }, shape]}>
+      style={[{ width: size, height: size, overflow: 'hidden', backgroundColor: '#FFF4E8' }, shape]}>
       <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: size, height: size }, turning]}>
         <View style={{ position: 'absolute', left: inset, top: inset, width: patch, height: patch }}>
-          {RING_COLORS.map((_, i) => <ColorPatch key={i} index={i} u={u} size={patch * 0.78} />)}
+          {RING_COLORS.map((_, i) => <ColorPatch key={i} index={i} u={u} size={patch * 0.95} />)}
         </View>
       </Animated.View>
     </Animated.View>

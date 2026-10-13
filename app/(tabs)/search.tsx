@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
+import { openSearch } from '@/lib/open-search';
 
 type ThemeOption = { id: string; name: string };
 
@@ -336,6 +337,18 @@ export default function SearchScreen() {
             Your searches, chats, and patterns — gathered.
           </Text>
         </View>
+        <Pressable
+          onPress={openSearch}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Search your journal"
+          style={{
+            width: 40, height: 40, borderRadius: 20, backgroundColor: '#ffffff',
+            alignItems: 'center', justifyContent: 'center',
+            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+          }}>
+          <Feather name="search" size={18} color="#78716c" />
+        </Pressable>
       </View>
 
       {/* Monthly reflection — the headline moment */}

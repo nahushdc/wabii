@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { View, Text, SectionList, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, SectionList, Pressable, ActivityIndicator, RefreshControl, useWindowDimensions } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { router, useFocusEffect } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
@@ -111,6 +111,7 @@ export default function HomeScreen() {
   const [streak, setStreak] = useState(0);
   const timeOfDay = getTimeOfDayPhrase();
   const [wordIndex, setWordIndex] = useState(0);
+  const { height: windowHeight } = useWindowDimensions();
 
   useEffect(() => {
     const id = setInterval(() => setWordIndex(i => (i + 1) % CHECK_IN_WORDS.length), 2600);
@@ -152,19 +153,11 @@ export default function HomeScreen() {
     );
   }
 
-  // The intro shows only the first time; after that search opens directly.
-  async function handleSearchPress() {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data } = user
-      ? await supabase.from('users').select('search_onboarding_seen').eq('id', user.id).maybeSingle()
-      : { data: null };
-    router.push(data?.search_onboarding_seen ? '/search-overlay' : '/search-onboarding');
-  }
-
-  const blobSize = 200;
+  const blobSize = 260;
+  const heroHeight = Math.round(windowHeight * 0.78);
 
   const hero = (
-    <View style={{ alignItems: 'center', paddingTop: 20, paddingBottom: 72 }}>
+    <View style={{ minHeight: heroHeight, alignItems: 'center', justifyContent: 'center', paddingBottom: 24 }}>
       <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 18, color: '#57534e', marginBottom: 4 }}>
         Hey{firstName ? ` ${firstName}` : ' there'},
       </Text>
@@ -216,19 +209,6 @@ export default function HomeScreen() {
 
   return (
     <WarmBackground>
-      {/* Search sits top-right; the greeting and ring scroll with the entries. */}
-      <Pressable
-        onPress={handleSearchPress}
-        hitSlop={10}
-        style={{
-          position: 'absolute', top: 60, right: 24, zIndex: 2,
-          width: 40, height: 40, borderRadius: 20, backgroundColor: '#ffffff',
-          alignItems: 'center', justifyContent: 'center',
-          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
-        }}>
-        <Feather name="search" size={18} color="#78716c" />
-      </Pressable>
-
         <SectionList
           sections={sections}
           keyExtractor={item => item.id}
@@ -244,7 +224,7 @@ export default function HomeScreen() {
               tintColor="#E85D2C"
             />
           }
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 76, paddingBottom: 180 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 40, paddingBottom: 180 }}
           stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }) => (
             <View style={{ paddingTop: 20, paddingBottom: 6, paddingHorizontal: 4 }}>
