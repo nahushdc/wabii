@@ -158,7 +158,7 @@ export default function HomeScreen() {
 
   const hero = (
     <View style={{ minHeight: heroHeight, alignItems: 'center', justifyContent: 'center', paddingBottom: 24 }}>
-      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 18, color: '#57534e', marginBottom: 4 }}>
+      <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 21, color: '#3f3a36', marginBottom: 12 }}>
         Hey{firstName ? ` ${firstName}` : ' there'},
       </Text>
       <Text style={{
