@@ -159,7 +159,7 @@ export default function HomeScreen() {
   const hero = (
     <View style={{ minHeight: heroHeight, alignItems: 'center', justifyContent: 'center', paddingBottom: 24 }}>
       <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 21, color: '#3f3a36', marginBottom: 12 }}>
-        Hey{firstName ? ` ${firstName}` : ' there'},
+        Hey{firstName ? ` ${firstName}` : ' there'}
       </Text>
       <Text style={{
         fontFamily: 'Inter_700Bold', fontSize: 24, lineHeight: 30, color: '#1c1917',
@@ -194,10 +194,10 @@ export default function HomeScreen() {
       {hasEntries ? (
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 28,
-          borderWidth: 1, borderColor: streak > 0 ? 'rgba(232, 93, 44, 0.5)' : 'rgba(28, 25, 23, 0.18)',
+          borderWidth: 1.5, borderColor: streak > 0 ? '#57534e' : '#a8a29e',
           borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8,
         }}>
-          <Ionicons name="flame-outline" size={16} color={streak > 0 ? COLORS.primary : '#a8a29e'} />
+          <Ionicons name="flame" size={17} color={streak > 0 ? COLORS.primary : '#a8a29e'} />
           <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13.5, color: streak > 0 ? '#57534e' : '#a8a29e' }}>
             {streak} day streak
           </Text>
