@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { calculateStreak } from '@/lib/streak';
 import { WarmBackground } from '@/components/warm-background';
 
 function getInitials(nameOrEmail: string) {
@@ -12,31 +13,6 @@ function getInitials(nameOrEmail: string) {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
   return nameOrEmail[0].toUpperCase();
-}
-
-function calculateStreak(dates: string[]): number {
-  if (dates.length === 0) return 0;
-
-  // Get unique date strings (YYYY-MM-DD) in local time
-  const unique = Array.from(new Set(
-    dates.map(d => new Date(d).toLocaleDateString('en-CA')) // en-CA gives YYYY-MM-DD
-  )).sort((a, b) => b.localeCompare(a)); // descending
-
-  const today = new Date().toLocaleDateString('en-CA');
-  const yesterday = new Date(Date.now() - 864e5).toLocaleDateString('en-CA');
-
-  // Streak must start from today or yesterday
-  if (unique[0] !== today && unique[0] !== yesterday) return 0;
-
-  let streak = 1;
-  for (let i = 1; i < unique.length; i++) {
-    const prev = new Date(unique[i - 1]);
-    const curr = new Date(unique[i]);
-    const diffDays = Math.round((prev.getTime() - curr.getTime()) / 864e5);
-    if (diffDays === 1) streak++;
-    else break;
-  }
-  return streak;
 }
 
 function StatBox({ value, label, emoji }: { value: string | number; label: string; emoji: string }) {

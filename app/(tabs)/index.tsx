@@ -1,9 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
 import { View, Text, SectionList, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { SpinningRing } from '@/components/spinning-ring';
+import { COLORS } from '@/constants/colors';
+import { calculateStreak } from '@/lib/streak';
 
 type Entry = {
   id: string;
@@ -16,12 +19,12 @@ type Section = {
   data: Entry[];
 };
 
-function getGreetingEmoji() {
+function getTimeOfDayPhrase() {
   const hour = new Date().getHours();
-  if (hour < 12) return '☀️';
-  if (hour < 17) return '🌤️';
-  if (hour < 21) return '🌇';
-  return '🌙';
+  if (hour < 12) return 'this morning';
+  if (hour < 17) return 'this afternoon';
+  if (hour < 21) return 'this evening';
+  return 'tonight';
 }
 
 function getDayLabel(iso: string) {
@@ -102,7 +105,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [chatEntryIds, setChatEntryIds] = useState<Set<string>>(new Set());
   const [firstName, setFirstName] = useState('');
-  const greetingEmoji = getGreetingEmoji();
+  const [streak, setStreak] = useState(0);
+  const timeOfDay = getTimeOfDayPhrase();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -120,6 +124,7 @@ export default function HomeScreen() {
     const entries = entryData ?? [];
     setHasEntries(entries.length > 0);
     setSections(groupByDate(entries));
+    setStreak(calculateStreak(entries.map(e => e.created_at)));
     setChatEntryIds(new Set((conversationData ?? []).map(c => c.entry_id)));
   }
 
@@ -147,51 +152,73 @@ export default function HomeScreen() {
     router.push(data?.search_onboarding_seen ? '/search-overlay' : '/search-onboarding');
   }
 
+  const ringSize = 230;
+
+  const hero = (
+    <View style={{ alignItems: 'center', paddingTop: 20, paddingBottom: 8 }}>
+      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 16, color: '#78716c', marginBottom: 6 }}>
+        Hey{firstName ? ` ${firstName}` : ' there'},
+      </Text>
+      <Text style={{
+        fontFamily: 'Inter_700Bold', fontSize: 31, lineHeight: 38, color: '#1c1917',
+        textAlign: 'center', paddingHorizontal: 20,
+      }}>
+        How are you feeling {timeOfDay}?
+      </Text>
+
+      <Pressable
+        onPress={() => router.push('/(tabs)/new-entry')}
+        accessibilityRole="button"
+        accessibilityLabel="Let it out. Start a new entry."
+        style={{ width: ringSize, height: ringSize, alignItems: 'center', justifyContent: 'center', marginTop: 32 }}>
+        <View style={{ position: 'absolute' }}>
+          <SpinningRing size={ringSize} />
+        </View>
+        <Feather name="plus" size={34} color={COLORS.primary} />
+        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 17, color: COLORS.primary, marginTop: 6 }}>
+          Let it out
+        </Text>
+      </Pressable>
+
+      {streak > 0 ? (
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 24,
+          backgroundColor: '#F5CBB6', borderRadius: 22, paddingHorizontal: 18, paddingVertical: 11,
+        }}>
+          <Ionicons name="flame-outline" size={18} color={COLORS.primary} />
+          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 15, color: '#1c1917' }}>
+            {streak} day{streak === 1 ? '' : 's'} streak
+          </Text>
+        </View>
+      ) : !hasEntries ? (
+        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', marginTop: 24, textAlign: 'center' }}>
+          Whatever's on your mind — get it out.
+        </Text>
+      ) : null}
+
+      <View style={{ height: 12 }} />
+    </View>
+  );
+
   return (
     <WarmBackground>
-      {/* Header */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: 24, paddingTop: 84, paddingBottom: 0,
-      }}>
-        <Text style={{ fontSize: 24, fontFamily: 'Inter_700Bold', color: '#44403c', lineHeight: 30 }}>
-          {greetingEmoji}  Hey{firstName ? ` ${firstName}` : ' there'}
-        </Text>
-        <Pressable
-          onPress={handleSearchPress}
-          hitSlop={10}
-          style={{
-            width: 40, height: 40, borderRadius: 20, backgroundColor: '#ffffff',
-            alignItems: 'center', justifyContent: 'center',
-            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
-          }}>
-          <Feather name="search" size={18} color="#78716c" />
-        </Pressable>
-      </View>
+      {/* Search sits top-right; the greeting and ring scroll with the entries. */}
+      <Pressable
+        onPress={handleSearchPress}
+        hitSlop={10}
+        style={{
+          position: 'absolute', top: 60, right: 24, zIndex: 2,
+          width: 40, height: 40, borderRadius: 20, backgroundColor: '#ffffff',
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+        }}>
+        <Feather name="search" size={18} color="#78716c" />
+      </Pressable>
 
-      {!hasEntries ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>✍️</Text>
-          <Text style={{ fontSize: 22, fontFamily: 'Inter_600SemiBold', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
-            Nothing here yet
-          </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', textAlign: 'center', lineHeight: 24, marginBottom: 24 }}>
-            Whatever's on your mind — get it out.
-          </Text>
-          <Pressable
-            onPress={() => router.push('/(tabs)/new-entry')}
-            style={{
-              backgroundColor: '#E85D2C', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 24,
-              flexDirection: 'row', alignItems: 'center', gap: 8,
-            }}>
-            <Feather name="edit-3" size={16} color="#ffffff" />
-            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#ffffff' }}>Type, talk, or chat</Text>
-          </Pressable>
-        </View>
-      ) : (
         <SectionList
           sections={sections}
           keyExtractor={item => item.id}
+          ListHeaderComponent={hero}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -203,7 +230,7 @@ export default function HomeScreen() {
               tintColor="#E85D2C"
             />
           }
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 180 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 76, paddingBottom: 180 }}
           stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }) => (
             <View style={{ paddingTop: 20, paddingBottom: 6, paddingHorizontal: 4 }}>
@@ -262,7 +289,6 @@ export default function HomeScreen() {
             );
           }}
         />
-      )}
     </WarmBackground>
   );
 }
