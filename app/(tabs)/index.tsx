@@ -192,16 +192,21 @@ export default function HomeScreen() {
       </Pressable>
 
       {hasEntries ? (
-        <View style={{
+        <Pressable
+          onPress={() => router.push('/streak')}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="View streak details"
+          style={{
           flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 28,
-          borderWidth: 1.5, borderColor: streak > 0 ? 'rgba(87, 83, 78, 0.5)' : 'rgba(168, 162, 158, 0.5)',
+          borderWidth: 1.5, borderColor: streak > 0 ? 'rgba(87, 83, 78, 0.3)' : 'rgba(168, 162, 158, 0.35)',
           borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8,
         }}>
           <Ionicons name="flame" size={17} color={streak > 0 ? COLORS.primary : '#a8a29e'} />
           <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13.5, color: streak > 0 ? '#57534e' : '#a8a29e' }}>
             {streak} day streak
           </Text>
-        </View>
+        </Pressable>
       ) : (
         <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', marginTop: 28, textAlign: 'center' }}>
           Whatever's on your mind — get it out.
