@@ -194,7 +194,7 @@ export default function HomeScreen() {
       {hasEntries ? (
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 28,
-          borderWidth: 1.5, borderColor: streak > 0 ? '#57534e' : '#a8a29e',
+          borderWidth: 1.5, borderColor: streak > 0 ? 'rgba(87, 83, 78, 0.5)' : 'rgba(168, 162, 158, 0.5)',
           borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8,
         }}>
           <Ionicons name="flame" size={17} color={streak > 0 ? COLORS.primary : '#a8a29e'} />
