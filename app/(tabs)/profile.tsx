@@ -54,15 +54,14 @@ function StreakRow({ streak }: { streak: number }) {
   );
 }
 
-// A flat, airy settings row — no card, just a hairline divider underneath.
-function MenuItem({ label, subtitle, icon, onPress, danger, last }: { label: string; subtitle?: string; icon: string; onPress: () => void; danger?: boolean; last?: boolean }) {
+// A flat, airy settings row — no card, no divider, no chevron.
+function MenuItem({ label, subtitle, icon, onPress, danger }: { label: string; subtitle?: string; icon: string; onPress: () => void; danger?: boolean }) {
   return (
     <Pressable
       onPress={onPress}
       style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingVertical: 21,
-        borderBottomWidth: last ? 0 : 0.5, borderBottomColor: 'rgba(28, 25, 23, 0.07)',
+        paddingVertical: 19,
       }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flex: 1, marginRight: 12 }}>
         <Feather name={icon as any} size={20} color={danger ? '#ef4444' : '#8a8279'} />
@@ -73,7 +72,6 @@ function MenuItem({ label, subtitle, icon, onPress, danger, last }: { label: str
           ) : null}
         </View>
       </View>
-      <Feather name="chevron-right" size={15} color="#d6cdc3" />
     </Pressable>
   );
 }
@@ -171,7 +169,7 @@ export default function ProfileScreen() {
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 140 }}>
       {/* Header */}
       <View style={{ paddingHorizontal: 24, paddingTop: 64, paddingBottom: 16 }}>
-        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917' }}>Profile</Text>
+        <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 18, color: '#1c1917' }}>Profile</Text>
       </View>
 
       {loading ? (
@@ -225,7 +223,7 @@ export default function ProfileScreen() {
             <MenuItem label="Pursuits" icon="edit-3" onPress={handlePursuitsPress} />
             <MenuItem label="Share with coach" icon="share-2" onPress={() => router.push('/therapist-invite')} />
             <MenuItem label="Export & Import" icon="download" onPress={() => router.push('/export')} />
-            <MenuItem label="Help" icon="help-circle" onPress={() => router.push('/help')} last />
+            <MenuItem label="Help" icon="help-circle" onPress={() => router.push('/help')} />
           </View>
 
           {/* Sign out */}
