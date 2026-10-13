@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Pressable, FlatList, ActivityIndicator, ScrollView, Modal } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
@@ -19,15 +18,23 @@ type DigestInsights = {
 };
 
 type MonthlyDigest = { id: string; content: string; month_start: string; seen_at: string | null; insights: DigestInsights | null };
-type WeeklyDigestSummary = { id: string; week_start: string; seen_at: string | null };
+type WeeklyDigestSummary = { id: string; week_start: string; seen_at: string | null; insights: DigestInsights | null };
 
-// Alternating pastel + slight rotation for each mini weekly card, so the row
-// reads like a little scattered stack of notes rather than a rigid list.
+// Soft, flat tints for the weekly cards — lighter than the page's accent
+// colours and clearly not white, so they don't melt into the white nav bar.
 const WEEKLY_CARD_STYLES = [
-  { bg: '#CFEAC1', accent: '#2D5F2D', rotate: '-3deg' },
-  { bg: '#FBC9A8', accent: '#9A3412', rotate: '2deg' },
-  { bg: '#DDC6F5', accent: '#5B3E85', rotate: '-2deg' },
-  { bg: '#F6DD97', accent: '#8A5A0F', rotate: '3deg' },
+  { bg: '#FADFD0', dot: '#E85D2C' },
+  { bg: '#E6DDF5', dot: '#7C5CBF' },
+  { bg: '#D9E8F7', dot: '#4A8AD4' },
+  { bg: '#E3EFD3', dot: '#5E9A3A' },
+];
+
+// Solid poster colours for the pursuit cards, each with a darker text tone.
+const PURSUIT_CARD_STYLES = [
+  { bg: '#DEEDAE', ink: '#3F4D12' },
+  { bg: '#A5C8EA', ink: '#1B3A5C' },
+  { bg: '#FADFA0', ink: '#6B4400' },
+  { bg: '#CDB9ED', ink: '#3D2463' },
 ];
 
 type FeedItem =
@@ -212,6 +219,7 @@ export default function SearchScreen() {
   const [insightLoadingId, setInsightLoadingId] = useState<string | null>(null);
   const [latestMonthly, setLatestMonthly] = useState<MonthlyDigest | null>(null);
   const [weeklyDigests, setWeeklyDigests] = useState<WeeklyDigestSummary[]>([]);
+  const [pursuitCounts, setPursuitCounts] = useState<Record<string, number>>({});
 
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<Set<FeedType>>(new Set(ALL_FEED_TYPES));
@@ -234,10 +242,23 @@ export default function SearchScreen() {
 
       supabase
         .from('weekly_digests')
-        .select('id, week_start, seen_at')
+        .select('id, week_start, seen_at, insights')
         .order('week_start', { ascending: false })
         .limit(10)
-        .then(({ data }) => setWeeklyDigests(data ?? []));
+        .then(({ data }) => setWeeklyDigests((data ?? []) as WeeklyDigestSummary[]));
+
+      supabase
+        .from('journal_entries')
+        .select('prompt_theme_id')
+        .not('prompt_theme_id', 'is', null)
+        .then(({ data }) => {
+          const counts: Record<string, number> = {};
+          for (const row of data ?? []) {
+            const id = row.prompt_theme_id as string;
+            counts[id] = (counts[id] ?? 0) + 1;
+          }
+          setPursuitCounts(counts);
+        });
 
       Promise.all([
         supabase
@@ -319,24 +340,11 @@ export default function SearchScreen() {
 
   const listHeader = (
     <>
-      {/* Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 24, paddingTop: 64, paddingBottom: 22 }}>
-        <LinearGradient
-          colors={['#8B5FBF', '#5B3E85']}
-          style={{
-            width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center',
-            shadowColor: '#5B3E85', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
-          }}>
-          <MaterialCommunityIcons name="brain" size={22} color="#ffffff" />
-        </LinearGradient>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917' }}>
-            Reflect
-          </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#a8a29e', lineHeight: 18, marginTop: 2 }}>
-            Your searches, chats, and patterns — gathered.
-          </Text>
-        </View>
+      {/* Header — a small title with search beside it */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 64, paddingBottom: 6 }}>
+        <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 18, color: '#1c1917' }}>
+          Reflect
+        </Text>
         <Pressable
           onPress={openSearch}
           hitSlop={10}
@@ -351,109 +359,91 @@ export default function SearchScreen() {
         </Pressable>
       </View>
 
-      {/* Monthly reflection — the headline moment */}
+      {/* Monthly reflection — flat dark card, the headline moment */}
       {latestMonthly && (() => {
         const isNew = !latestMonthly.seen_at;
+        const ins = latestMonthly.insights;
+        const monthName = new Date(`${latestMonthly.month_start}T00:00:00`).toLocaleDateString('en-US', { month: 'long' });
+        const chips = [
+          ins && ins.moods.length > 0 ? `${ins.moods.length} mood${ins.moods.length === 1 ? '' : 's'}` : null,
+          ins && ins.new_patterns.length > 0 ? `${ins.new_patterns.length} new` : null,
+          ins && ins.repeating_patterns.length > 0 ? `${ins.repeating_patterns.length} repeating` : null,
+          ins && ins.attention_patterns.length > 0 ? `${ins.attention_patterns.length} need attention` : null,
+        ].filter(Boolean) as string[];
         return (
-          <View style={{ paddingHorizontal: 24, marginBottom: 26 }}>
+          <View style={{ paddingHorizontal: 20, marginTop: 14, marginBottom: 6 }}>
             <Pressable onPress={() => router.push(`/monthly-digest/${latestMonthly.id}`)}>
-              <LinearGradient
-                colors={['#332946', '#1E1830']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={{
-                  borderRadius: 26, paddingHorizontal: 22, paddingTop: 22, paddingBottom: 22, overflow: 'hidden',
-                  shadowColor: '#1E1830', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 6,
-                }}>
-                {/* decorative sparkle field */}
-                <Text style={{ position: 'absolute', top: 14, right: 26, fontSize: 12, opacity: 0.5 }}>✦</Text>
-                <Text style={{ position: 'absolute', top: 54, right: 54, fontSize: 8, opacity: 0.4 }}>✦</Text>
-                <Text style={{ position: 'absolute', bottom: 60, right: 16, fontSize: 10, opacity: 0.35 }}>✦</Text>
-
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <View style={{
-                      width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.12)',
-                      alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Text style={{ fontSize: 17 }}>🌙</Text>
-                    </View>
-                    <View>
-                      <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 1.4, textTransform: 'uppercase', color: '#C9B8E8' }}>
-                        Monthly Reflection
-                      </Text>
-                      <Text style={{ fontSize: 13, fontFamily: 'Inter_500Medium', color: 'rgba(255,255,255,0.65)', marginTop: 1 }}>
-                        {formatMonth(latestMonthly.month_start)}
-                      </Text>
-                    </View>
-                  </View>
+              <View style={{ backgroundColor: '#2A2040', borderRadius: 24, padding: 20 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 1.4, textTransform: 'uppercase', color: '#C9B8E8' }}>
+                    Monthly reflection
+                  </Text>
                   {isNew && (
-                    <View style={{ backgroundColor: '#8B5FBF', borderRadius: 20, paddingHorizontal: 9, paddingVertical: 4 }}>
-                      <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.6, color: '#ffffff' }}>NEW</Text>
+                    <View style={{ backgroundColor: '#FF8A5C', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+                      <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.6, color: '#2a1608' }}>NEW</Text>
                     </View>
                   )}
                 </View>
-
-                {latestMonthly.insights && insightSummaryLine(latestMonthly.insights) ? (
-                  <View style={{ marginBottom: 18 }}>
-                    <InsightStatRow insights={latestMonthly.insights} light />
+                <Text style={{ fontSize: 32, fontFamily: 'Inter_700Bold', color: '#F3EEFA', marginTop: 4 }}>
+                  {monthName}
+                </Text>
+                <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: '#E6DCF7', lineHeight: 21, marginTop: 6 }} numberOfLines={3}>
+                  {stripLeadingHeading(latestMonthly.content).replace(/\*\*/g, '')}
+                </Text>
+                {chips.length > 0 && (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+                    {chips.map(c => (
+                      <View key={c} style={{ backgroundColor: '#3B2E5C', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 }}>
+                        <Text style={{ fontSize: 11.5, fontFamily: 'Inter_500Medium', color: '#E6DCF7' }}>{c}</Text>
+                      </View>
+                    ))}
                   </View>
-                ) : (
-                  <Text style={{ fontSize: 17, fontFamily: 'Inter_500Medium', color: '#F3EEFA', lineHeight: 26, marginBottom: 18 }} numberOfLines={4}>
-                    {stripLeadingHeading(latestMonthly.content)}
-                  </Text>
                 )}
-
                 <View style={{
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, paddingVertical: 12,
+                  flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 16,
+                  backgroundColor: '#FF8A5C', borderRadius: 16, paddingHorizontal: 15, paddingVertical: 10,
                 }}>
-                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: '#ffffff' }}>Open your month in review</Text>
-                  <Feather name="arrow-right" size={14} color="#ffffff" />
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: '#2a1608' }}>Read reflection</Text>
+                  <Feather name="arrow-right" size={14} color="#2a1608" />
                 </View>
-              </LinearGradient>
+              </View>
             </Pressable>
           </View>
         );
       })()}
 
-      {/* Weekly reflections — small scattered note cards */}
+      {/* Weekly reflections — flat, softly tinted cards */}
       {weeklyDigests.length > 0 && (
-        <View style={{ marginBottom: 20 }}>
+        <View style={{ marginTop: 20, marginBottom: 6 }}>
           <Text style={{
             fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.4, textTransform: 'uppercase',
-            color: '#c4b9b0', paddingHorizontal: 24, marginBottom: 12,
+            color: '#a8a29e', paddingHorizontal: 24, marginBottom: 10,
           }}>
-            Weekly reflections
+            Weekly
           </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 6, gap: 14 }}
+            contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
             style={{ flexGrow: 0 }}>
             {weeklyDigests.map((w, i) => {
-              const cardStyle = WEEKLY_CARD_STYLES[i % WEEKLY_CARD_STYLES.length];
+              const card = WEEKLY_CARD_STYLES[i % WEEKLY_CARD_STYLES.length];
               const isNew = !w.seen_at;
+              const mood = w.insights?.moods?.[0];
               return (
                 <Pressable
                   key={w.id}
                   onPress={() => router.push(`/digest/${w.id}`)}
-                  style={{
-                    width: 118, minHeight: 96, backgroundColor: cardStyle.bg, borderRadius: 14,
-                    padding: 12, transform: [{ rotate: cardStyle.rotate }],
-                    borderWidth: 1, borderColor: 'rgba(28,25,23,0.06)',
-                    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3,
-                  }}>
-                  {isNew && (
-                    <View style={{
-                      position: 'absolute', top: 8, right: 8, width: 7, height: 7, borderRadius: 4,
-                      backgroundColor: cardStyle.accent,
-                    }} />
-                  )}
-                  <Text style={{ fontSize: 16, marginBottom: 8 }}>🌿</Text>
-                  <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 12, color: cardStyle.accent, lineHeight: 16 }}>
+                  style={{ width: 116, backgroundColor: card.bg, borderRadius: 18, padding: 13 }}>
+                  <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 13, color: '#1c1917', lineHeight: 18 }}>
                     {formatWeek(w.week_start)}
                   </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: card.dot }} />
+                    <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: '#57534e' }} numberOfLines={1}>
+                      {isNew ? 'New' : (mood ?? 'Read')}
+                    </Text>
+                  </View>
                 </Pressable>
               );
             })}
@@ -461,42 +451,48 @@ export default function SearchScreen() {
         </View>
       )}
 
+      {/* Pursuits — tall poster cards */}
       {themes.length > 0 && (
-        <View style={{ marginBottom: 22 }}>
-          <Text style={{
-            fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 1.4, textTransform: 'uppercase',
-            color: '#c4b9b0', paddingHorizontal: 24, marginBottom: 10,
-          }}>
-            Your pursuits
-          </Text>
+        <View style={{ marginTop: 20, marginBottom: 22 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 10 }}>
+            <Text style={{
+              fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.4, textTransform: 'uppercase', color: '#a8a29e',
+            }}>
+              Pursuits
+            </Text>
+            <Pressable onPress={() => router.push('/prompt-themes')} hitSlop={10}>
+              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: COLORS.primary }}>Add</Text>
+            </Pressable>
+          </View>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 24, gap: 10 }}
+            contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
             style={{ flexGrow: 0 }}>
-            {themes.map(theme => (
-              <Pressable
-                key={theme.id}
-                onPress={() => handleSeeInsights(theme)}
-                disabled={insightLoadingId === theme.id}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 8,
-                  backgroundColor: '#ffffff', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 11,
-                  shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
-                }}>
-                <View style={{
-                  width: 26, height: 26, borderRadius: 13, backgroundColor: '#FDE6DB',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
+            {themes.map((theme, i) => {
+              const card = PURSUIT_CARD_STYLES[i % PURSUIT_CARD_STYLES.length];
+              const count = pursuitCounts[theme.id] ?? 0;
+              return (
+                <Pressable
+                  key={theme.id}
+                  onPress={() => handleSeeInsights(theme)}
+                  disabled={insightLoadingId === theme.id}
+                  style={{
+                    width: 124, height: 132, backgroundColor: card.bg, borderRadius: 22, padding: 14,
+                    justifyContent: 'space-between',
+                  }}>
                   {insightLoadingId === theme.id
-                    ? <ActivityIndicator size="small" color={COLORS.primary} />
-                    : <Feather name="compass" size={12} color={COLORS.primary} />}
-                </View>
-                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: '#1c1917' }} numberOfLines={1}>
-                  {theme.name}
-                </Text>
-              </Pressable>
-            ))}
+                    ? <ActivityIndicator size="small" color={card.ink} style={{ alignSelf: 'flex-start' }} />
+                    : <Feather name="compass" size={18} color={card.ink} />}
+                  <View>
+                    <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 28, color: card.ink, lineHeight: 30 }}>{count}</Text>
+                    <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12.5, color: card.ink, marginTop: 3 }} numberOfLines={2}>
+                      {theme.name}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
           </ScrollView>
         </View>
       )}
