@@ -5,7 +5,8 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { calculateStreak } from '@/lib/streak';
-import { WarmBackground } from '@/components/warm-background';
+import { WarmBackground, WARM_BG_COLOR } from '@/components/warm-background';
+import { LinearGradient } from 'expo-linear-gradient';
 
 function getInitials(nameOrEmail: string) {
   const parts = nameOrEmail.split(/[\s@]+/);
@@ -53,25 +54,26 @@ function StreakRow({ streak }: { streak: number }) {
   );
 }
 
-function MenuItem({ label, subtitle, icon, onPress, danger }: { label: string; subtitle?: string; icon: string; onPress: () => void; danger?: boolean }) {
+// A flat, airy settings row — no card, just a hairline divider underneath.
+function MenuItem({ label, subtitle, icon, onPress, danger, last }: { label: string; subtitle?: string; icon: string; onPress: () => void; danger?: boolean; last?: boolean }) {
   return (
     <Pressable
       onPress={onPress}
       style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        backgroundColor: '#ffffff', borderRadius: 16, padding: 16, marginBottom: 10,
-        shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+        paddingVertical: 21,
+        borderBottomWidth: last ? 0 : 0.5, borderBottomColor: 'rgba(28, 25, 23, 0.07)',
       }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 12 }}>
-        <Feather name={icon as any} size={18} color={danger ? '#ef4444' : '#78716c'} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flex: 1, marginRight: 12 }}>
+        <Feather name={icon as any} size={20} color={danger ? '#ef4444' : '#8a8279'} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 15, color: danger ? '#ef4444' : '#1c1917' }}>{label}</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: danger ? '#ef4444' : '#1c1917' }}>{label}</Text>
           {subtitle ? (
             <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11.5, color: '#a8a29e', marginTop: 1 }}>{subtitle}</Text>
           ) : null}
         </View>
       </View>
-      <Feather name="chevron-right" size={16} color="#d4cdc8" />
+      <Feather name="chevron-right" size={15} color="#d6cdc3" />
     </Pressable>
   );
 }
@@ -214,7 +216,7 @@ export default function ProfileScreen() {
 
           {/* Menu */}
           <View style={{ paddingHorizontal: 24, marginBottom: 24 }}>
-            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 12 }}>
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.6, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 6 }}>
               Settings
             </Text>
             <MenuItem label="Reminders" icon="bell" onPress={() => router.push('/notifications')} />
@@ -223,7 +225,7 @@ export default function ProfileScreen() {
             <MenuItem label="Pursuits" icon="edit-3" onPress={handlePursuitsPress} />
             <MenuItem label="Share with coach" icon="share-2" onPress={() => router.push('/therapist-invite')} />
             <MenuItem label="Export & Import" icon="download" onPress={() => router.push('/export')} />
-            <MenuItem label="Help" icon="help-circle" onPress={() => router.push('/help')} />
+            <MenuItem label="Help" icon="help-circle" onPress={() => router.push('/help')} last />
           </View>
 
           {/* Sign out */}
@@ -249,6 +251,13 @@ export default function ProfileScreen() {
         </>
       )}
     </ScrollView>
+    {/* Soft fade so rows slide out under the floating nav bar instead of colliding with it */}
+    <LinearGradient
+      pointerEvents="none"
+      colors={['rgba(245, 239, 228, 0)', WARM_BG_COLOR]}
+      locations={[0, 0.7]}
+      style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 120 }}
+    />
     </WarmBackground>
   );
 }
