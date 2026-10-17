@@ -4,6 +4,7 @@ import { Link, router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
 import { signInWithGoogle } from '@/lib/auth';
+import { AppleSignInButton } from '@/components/apple-sign-in-button';
 import { PasswordInput } from '@/components/password-input';
 import { WarmBackground } from '@/components/warm-background';
 
@@ -96,6 +97,9 @@ export default function LogInScreen() {
             ? <ActivityIndicator color="white" />
             : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Log in</Text>}
         </Pressable>
+
+        {/* Apple */}
+        <AppleSignInButton onError={setError} />
 
         {/* Google */}
         <Pressable

@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.wabiiapp.wabii",
+      "usesAppleSignIn": true,
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -54,6 +55,7 @@
         }
       ],
       "expo-secure-store",
+      "expo-apple-authentication",
       "expo-font",
       "@react-native-community/datetimepicker",
       "expo-audio",
