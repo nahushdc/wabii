@@ -12,6 +12,7 @@ import { Platform, AppState, AppStateStatus } from 'react-native';
 import { WarmBackground } from '@/components/warm-background';
 import { LaunchScreen } from '@/components/launch-screen';
 import { AppLockScreen } from '@/components/app-lock-screen';
+import { UpdateBanner } from '@/components/update-banner';
 import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
 import {
@@ -204,6 +205,7 @@ export default function RootLayout() {
       <NotificationDeepLinkHandler />
       <Stack screenOptions={{ headerShown: false }} />
       <StatusBar style="dark" />
+      <UpdateBanner />
       {session && appLock?.enabled && locked && appLock.hash && appLock.salt && (
         <AppLockScreen
           pinHash={appLock.hash}
