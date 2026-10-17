@@ -181,6 +181,91 @@ streak, rather than relying on a silent push notification.
   consent and phone-number collection, quiet hours and a clear way to opt out,
   per-message and per-call cost, and whether this sits behind a paid plan.
 
+### 7. Entry cards coloured by emotion (idea, not built)
+
+Today a card's colour is arbitrary: it is picked from a palette by the first
+character of the entry id (`app/(tabs)/index.tsx`, `CARD_COLORS`). The idea is to
+colour each card by the emotion in the entry, so the list becomes a glanceable
+mood history.
+
+**How intrusive is it, and can it work without reading the note?**
+Detecting emotion from text means something has to read the text; there is no
+way around that. What we control is *where* it is read and *what is kept*.
+
+- Entry text already goes to Claude for reflections, search and chat, so this is
+  not a new category of exposure. But those run on demand or weekly. Per-entry
+  detection would process *every* entry at save time, which is a step up and
+  should be disclosed in the privacy policy and be opt-in.
+- Keep only the result: store a single label from a fixed set (for example
+  calm, joyful, anxious, sad, angry, tired, mixed) in a new column such as
+  `journal_entries.mood`. Never store the model's reasoning, and have the prompt
+  return one word and nothing else.
+
+**Options for text, least to most intrusive**
+
+1. **User picks the mood** at save time (a small row of colours). Zero analysis,
+   zero privacy cost, and it produces ground truth for later.
+2. **On-device detection.** The text never leaves the phone. Apple's
+   NaturalLanguage sentiment is free but only gives positive/negative, and needs
+   a native module (so a new build, not an OTA update). A JS word-list approach
+   is OTA-able but coarse.
+3. **Server-side LLM at save time** (a small, cheap Claude model returning one
+   label). Richest and most accurate; the text is sent to the model once per
+   entry.
+4. **Hybrid (recommended):** ship 1 first, then add 3 as an opt-in setting
+   ("Colour my entries by mood") with a fixed label set, and always let the user
+   tap a card to correct its colour.
+
+**Voice entries**
+
+- *Words:* voice is already transcribed by Deepgram, so the transcript can go
+  through the same text path. No extra audio handling.
+- *Tone (pitch, pace, energy):* needs an audio emotion model, either a third-party
+  API or an on-device model. It is the most sensitive option, is much less
+  reliable than people expect (varies by accent, language, mic and person), and
+  would mean sending or analysing the raw voice. Not recommended for v1; revisit
+  only if users ask for it. Check data-protection rules before any voice-emotion
+  work.
+- Today the audio is relayed live to Deepgram and not kept by us (we only log
+  byte counts). Confirm Deepgram's own retention setting before making any claim
+  about this in the privacy policy.
+
+**Design and risk notes**
+
+- A wrong guess on a heavy entry (colouring grief as "joyful") feels worse than no
+  colour. Use a neutral colour when confidence is low, avoid red-means-bad
+  judgements, and always allow a correction.
+- Colour alone is not enough for accessibility; show the mood word in the entry
+  detail.
+- Decide whether to backfill existing entries (a one-off cost and a one-off
+  reading of every old entry, so it needs its own consent).
+- Feeds back into reflections: a stored mood per entry would make weekly and
+  monthly mood insights cheaper and more consistent.
+
+### 8. Beta question: voice recordings and local storage (to ask)
+
+We do not keep voice recordings today. Before deciding whether to, ask beta users:
+
+- Do you want a recording of what you said, kept alongside the written entry?
+- If yes, where: only on this phone, or backed up to your account?
+- Would you want to replay it, or is the transcript enough?
+- How long should it be kept, and should you be able to delete just the audio?
+
+What the answers decide:
+
+- **On-device only:** no server storage cost or privacy exposure, but recordings
+  are lost on uninstall or a new phone unless included in the device backup, and
+  there is no access from other devices.
+- **In the cloud (Supabase Storage):** works across devices, but adds storage
+  cost, a bigger privacy surface, the need to cover audio in the delete-account
+  flow and the privacy policy, and per-user access rules.
+- **Neither:** keep the current behaviour (transcript only), which is the
+  simplest and most private.
+
+Run this as a short in-app or survey question to the TestFlight group, and
+decide after seeing the split. It also informs item 7, since tone-based emotion
+detection would need the audio.
+
 ## Already shipped (context)
 
 - Text / live-voice (Deepgram streaming) / talk-it-through chat entry capture
