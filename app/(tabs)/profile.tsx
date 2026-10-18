@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { calculateStreak } from '@/lib/streak';
 import { WarmBackground, WARM_BG_COLOR } from '@/components/warm-background';
 import { LinearGradient } from 'expo-linear-gradient';
+import { clearLocalJournalData } from '@/lib/offline-entries';
 
 function getInitials(nameOrEmail: string) {
   const parts = nameOrEmail.split(/[\s@]+/);
@@ -146,6 +147,7 @@ export default function ProfileScreen() {
     // The account is gone server-side: stop any reminders still scheduled on
     // this phone, then drop the local session (the auth guard returns to log-in).
     await Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
+    await clearLocalJournalData();
     await supabase.auth.signOut({ scope: 'local' });
   }
 

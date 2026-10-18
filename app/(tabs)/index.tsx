@@ -8,6 +8,7 @@ import { WarmBackground } from '@/components/warm-background';
 import { SpinningRing } from '@/components/spinning-ring';
 import { COLORS } from '@/constants/colors';
 import { calculateStreak } from '@/lib/streak';
+import { cacheEntries, currentUserId, getPendingEntries, loadCachedEntries, onEntriesSynced, syncPendingEntries } from '@/lib/offline-entries';
 
 type Entry = {
   id: string;
@@ -107,6 +108,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [chatEntryIds, setChatEntryIds] = useState<Set<string>>(new Set());
+  const [unsyncedIds, setUnsyncedIds] = useState<Set<string>>(new Set());
   const [firstName, setFirstName] = useState('');
   const [streak, setStreak] = useState(0);
   const timeOfDay = getTimeOfDayPhrase();
@@ -127,16 +129,41 @@ export default function HomeScreen() {
   }, []);
 
   async function fetchAll() {
-    const [{ data: entryData }, { data: conversationData }] = await Promise.all([
+    // Entries saved offline are still waiting on the phone: try to send
+    // them, and show them here in the meantime.
+    syncPendingEntries();
+
+    const [entryRes, { data: conversationData }] = await Promise.all([
       supabase.from('journal_entries').select('id, content, created_at').order('created_at', { ascending: false }),
       supabase.from('chat_conversations').select('entry_id'),
     ]);
-    const entries = entryData ?? [];
-    setHasEntries(entries.length > 0);
-    setSections(groupByDate(entries));
-    setStreak(calculateStreak(entries.map(e => e.created_at)));
+
+    // With no connection, fall back to the copy kept on the phone.
+    let entries: Entry[];
+    if (entryRes.error) {
+      entries = await loadCachedEntries();
+    } else {
+      entries = entryRes.data ?? [];
+      cacheEntries(entries);
+    }
+
+    const userId = await currentUserId();
+    const known = new Set(entries.map(e => e.id));
+    const waiting = (await getPendingEntries()).filter(p => p.user_id === userId && !known.has(p.id));
+    const merged = [
+      ...waiting.map(p => ({ id: p.id, content: p.content, created_at: p.created_at })),
+      ...entries,
+    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    setUnsyncedIds(new Set(waiting.map(p => p.id)));
+    setHasEntries(merged.length > 0);
+    setSections(groupByDate(merged));
+    setStreak(calculateStreak(merged.map(e => e.created_at)));
     setChatEntryIds(new Set((conversationData ?? []).map(c => c.entry_id)));
   }
+
+  // When a background upload finishes, refresh so "on this phone" tags clear.
+  useEffect(() => onEntriesSynced(() => { fetchAll(); }), []);
 
   useFocusEffect(
     useCallback(() => {
@@ -268,9 +295,17 @@ export default function HomeScreen() {
                   {preview(item.content)}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: textColor, opacity: 0.7 }}>
-                    {time}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: textColor, opacity: 0.7 }}>
+                      {time}
+                    </Text>
+                    {unsyncedIds.has(item.id) && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, opacity: 0.7 }}>
+                        <Feather name="cloud-off" size={11} color={textColor} />
+                        <Text style={{ fontSize: 10.5, fontFamily: 'Inter_500Medium', color: textColor }}>On this phone</Text>
+                      </View>
+                    )}
+                  </View>
                   {hasChat && (
                     <Pressable
                       onPress={() => router.push(`/chat/${item.id}`)}

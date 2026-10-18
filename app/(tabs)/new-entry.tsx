@@ -13,6 +13,7 @@ import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { cancelTodaysReminderOccurrencesIfJournaled } from '@/lib/reminder-notifications';
+import { clearDraft, currentUserId, loadDraft, newEntryId, queueEntry, saveDraft, syncPendingEntries } from '@/lib/offline-entries';
 import { VoiceMicControl } from '@/components/voice-pulse';
 
 function getTodayLabel() {
@@ -231,15 +232,27 @@ export default function NewEntryScreen() {
   // mounted across visits instead of unmounting them — so without this, the
   // previous entry's text/tags/transcript would still be sitting here the
   // next time this tab is opened. Reset on every focus instead.
+  // Whatever was being written is kept on the phone, so closing the app or
+  // leaving this screen never loses it; saving clears it.
+  const skipDraftRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
+      skipDraftRef.current = false;
       setError('');
       setContent(seed ? `${seed}\n\n` : '');
       setTags([]);
       setActiveThemeId(deepLinkThemeId ?? null);
       setPromptIndex(0);
+      if (!seed) {
+        loadDraft().then(draft => { if (draft && !skipDraftRef.current) setContent(draft); });
+      }
     }, [seed, deepLinkThemeId])
   );
+
+  useEffect(() => {
+    const t = setTimeout(() => { if (!skipDraftRef.current) saveDraft(content); }, 600);
+    return () => clearTimeout(t);
+  }, [content]);
 
   useEffect(() => {
     supabase
@@ -278,31 +291,29 @@ export default function NewEntryScreen() {
     if (!finalContent) { setError('Add something before saving.'); return; }
     setLoading(true);
 
-    const { data: { user } } = await supabase.auth.getUser();
+    // The entry is written to the phone first, so it saves instantly and
+    // survives having no signal; it uploads in the background.
+    const userId = await currentUserId();
+    if (!userId) { setError('Please sign in again to save.'); setLoading(false); return; }
 
-    const { data: entry, error: entryErr } = await supabase
-      .from('journal_entries')
-      .insert({ user_id: user!.id, content: finalContent, prompt_theme_id: activeThemeId })
-      .select('id')
-      .single();
-
-    if (entryErr || !entry) { setError(entryErr?.message ?? 'Failed to save.'); setLoading(false); return; }
-
-    if (tags.length > 0) {
-      for (const tag of tags) {
-        const { data: tagRow, error: tagErr } = await supabase
-          .from('tags')
-          .upsert({ user_id: user!.id, name: tag.name, category: tag.category }, { onConflict: 'user_id,name' })
-          .select('id')
-          .single();
-        if (tagErr || !tagRow) continue;
-        await supabase.from('entry_tags').insert({ entry_id: entry.id, tag_id: tagRow.id });
-      }
+    skipDraftRef.current = true;
+    try {
+      await queueEntry({
+        id: newEntryId(),
+        user_id: userId,
+        content: finalContent,
+        created_at: new Date().toISOString(),
+        prompt_theme_id: activeThemeId,
+        tags: tags.map(t => ({ name: t.name, category: t.category })),
+      });
+    } catch {
+      skipDraftRef.current = false;
+      setError("Couldn't save to this phone. Check that it has free storage and try again.");
+      setLoading(false);
+      return;
     }
-
-    supabase.functions.invoke('embed-entry', {
-      body: { entry_id: entry.id, content: finalContent },
-    });
+    await clearDraft();
+    syncPendingEntries();
 
     // Only after the entry is actually saved — cancel today's reminder(s)
     // for skip_if_journaled, not before, so a save that fails partway
@@ -350,7 +361,7 @@ export default function NewEntryScreen() {
 
       {(error || live.error) ? (
         <View style={{ marginHorizontal: 24, marginTop: 8, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || live.error}</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || (live.error && /connect|network|internet/i.test(live.error) ? 'Dictation needs internet. You can keep typing.' : live.error)}</Text>
         </View>
       ) : null}
 

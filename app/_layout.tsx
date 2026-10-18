@@ -13,6 +13,7 @@ import { WarmBackground } from '@/components/warm-background';
 import { LaunchScreen } from '@/components/launch-screen';
 import { AppLockScreen } from '@/components/app-lock-screen';
 import { UpdateBanner } from '@/components/update-banner';
+import { syncPendingEntries } from '@/lib/offline-entries';
 import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
 import {
@@ -139,6 +140,7 @@ export default function RootLayout() {
         if (complete) {
           registerForPushNotifications(session.user.id);
           syncAllReminderNotifications();
+          syncPendingEntries();
         }
         const lock = await loadAppLockSettings(session.user.id);
         setAppLock(lock);
@@ -189,6 +191,7 @@ export default function RootLayout() {
       // doesn't run out of upcoming occurrences.
       if (appStateRef.current !== 'active' && next === 'active' && session && onboardingComplete) {
         syncAllReminderNotifications();
+        syncPendingEntries();
       }
       appStateRef.current = next;
     });
