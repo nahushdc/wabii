@@ -284,6 +284,37 @@ there is no single pattern to count.
 - **Consent:** a pursuit created from what someone said in onboarding should say
   why it was added, and be easy to change or remove.
 
+### 10. Pursuits redesign (designed, not built)
+
+A pursuit stops being a tag you journal against and becomes a **saved question
+about yourself**, answered from the whole journal.
+
+- **Pursuit page:** the question and the person's "why"; what keeps showing up
+  (AI-written patterns with entry counts and dates); a mentions-per-week chart;
+  related entries; an "Ask about this" chat grounded in those entries and an
+  optional "Write" button.
+- **Matching by meaning:** when a pursuit is created the AI writes a few "what
+  this looks like in a journal" phrases, which are embedded and matched against
+  entries. A match table (entry, pursuit, score) is filled when an entry is saved,
+  new pursuits are backfilled, and entries already tagged count as full matches.
+  Insights are cached and refreshed after enough new matches or weekly.
+- **Cold start:** with few matches, show them with a line such as "Only 2 entries
+  touch on this so far" instead of a dead end.
+- **Empty state (decided):** when there are no pursuits, the Pursuits section on
+  Reflect shows a single quiet dashed card, "Add your first pursuit", with a small
+  chevron and no button. The whole card is tappable.
+- **First-time flow (decided):** shown once from that card, then straight to the
+  last step on later visits. 1) A pursuit is a question about you, with example
+  questions. 2) Ask once, keep writing: name the question, write as normal, see
+  what comes up. 3) Pick a starter question or write your own, with an optional
+  "why". This replaces the old Profile pursuits onboarding, which teaches
+  journaling against a pursuit.
+- **Depends on:** the matching above. The flow says Wabii looks across everything
+  written, which is not true of today's pursuits, so ship the matching first.
+- **Still open:** whether Wabii should suggest pursuits it notices; whether "Ask
+  about this" is in the first version; seeding a pursuit from the reason someone
+  gave in onboarding; and item 9 (very big questions such as "Who am I?").
+
 ## Already shipped (context)
 
 - Text / live-voice (Deepgram streaming) / talk-it-through chat entry capture
