@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { calculateStreak } from '@/lib/streak';
 import { WarmBackground, WARM_BG_COLOR } from '@/components/warm-background';
 import { LinearGradient } from 'expo-linear-gradient';
-import { clearLocalJournalData } from '@/lib/offline-entries';
+import { clearLocalJournalData, currentUserId, getPendingEntries, syncPendingEntries } from '@/lib/offline-entries';
 
 function getInitials(nameOrEmail: string) {
   const parts = nameOrEmail.split(/[\s@]+/);
@@ -116,21 +116,24 @@ export default function ProfileScreen() {
     await supabase.auth.signOut();
   }
 
-  function confirmDeleteAccount() {
+  async function confirmDeleteAccount() {
+    // Entries written offline that haven't uploaded yet exist only on this
+    // phone: try to send them first, and warn if any are still waiting.
+    await syncPendingEntries();
+    const userId = await currentUserId();
+    const waiting = (await getPendingEntries()).filter(p => p.user_id === userId).length;
+
+    const warning = waiting > 0
+      ? `\n\n${waiting} ${waiting === 1 ? 'entry is' : 'entries are'} saved only on this phone and ${waiting === 1 ? "hasn't" : "haven't"} uploaded yet. Deleting now loses ${waiting === 1 ? 'it' : 'them'}, and an export won\u2019t include ${waiting === 1 ? 'it' : 'them'}. Connect to the internet to upload first.`
+      : '';
+
     Alert.alert(
       'Delete your account?',
-      'This permanently deletes your account and everything in it: journal entries, reflections, tags, reminders and chats. It can\u2019t be undone.',
+      'This permanently deletes your account and everything in it: journal entries, reflections, tags, reminders and chats. It can\u2019t be undone.\n\nWe recommend saving a copy of your journal first.' + warning,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Continue',
-          style: 'destructive',
-          onPress: () =>
-            Alert.alert('Are you absolutely sure?', 'Your journal will be gone for good.', [
-              { text: 'Keep my account', style: 'cancel' },
-              { text: 'Delete everything', style: 'destructive', onPress: deleteAccount },
-            ]),
-        },
+        { text: 'Export my journal', onPress: () => router.push('/export') },
+        { text: 'Delete account', style: 'destructive', onPress: deleteAccount },
       ]
     );
   }
