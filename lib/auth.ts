@@ -3,6 +3,16 @@ import * as AuthSession from 'expo-auth-session';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { supabase } from './supabase';
+import { posthog } from './posthog';
+
+// Social sign-in can't tell us whether the account is new, so use the account's
+// age: created within the last two minutes means this was the sign-up.
+async function trackSocialAuth(method: 'google' | 'apple') {
+  const { data: { user } } = await supabase.auth.getUser();
+  const isNew = user?.created_at ? Date.now() - Date.parse(user.created_at) < 2 * 60 * 1000 : false;
+  if (isNew) posthog?.capture('account_signed_up', { signup_method: method });
+  else posthog?.capture('user_logged_in', { login_method: method });
+}
 
 export async function signInWithGoogle(): Promise<{ error: string | null }> {
   const redirectTo = AuthSession.makeRedirectUri();
@@ -33,6 +43,7 @@ export async function signInWithGoogle(): Promise<{ error: string | null }> {
 
   if (accessToken && refreshToken) {
     await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+    await trackSocialAuth('google');
     return { error: null };
   }
 
@@ -68,6 +79,7 @@ export async function signInWithApple(): Promise<{ error: string | null; cancele
       nonce: rawNonce,
     });
     if (error) return { error: error.message };
+    await trackSocialAuth('apple');
 
     // Apple only shares the user's name on the very first sign-in, so keep it.
     const given = credential.fullName?.givenName;

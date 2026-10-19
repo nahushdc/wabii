@@ -13,8 +13,11 @@ import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { cancelTodaysReminderOccurrencesIfJournaled } from '@/lib/reminder-notifications';
-import { clearDraft, currentUserId, loadDraft, newEntryId, queueEntry, saveDraft, syncPendingEntries } from '@/lib/offline-entries';
 import { VoiceMicControl } from '@/components/voice-pulse';
+import { posthog } from '@/lib/posthog';
+import { consumeReminderAttribution } from '@/lib/reminder-attribution';
+import { posthogLogs } from '@/lib/posthog-logs';
+import { clearDraft, currentUserId, loadDraft, newEntryId, queueEntry, saveDraft, syncPendingEntries } from '@/lib/offline-entries';
 
 function getTodayLabel() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -319,6 +322,20 @@ export default function NewEntryScreen() {
     // for skip_if_journaled, not before, so a save that fails partway
     // through still leaves the reminder in place.
     cancelTodaysReminderOccurrencesIfJournaled();
+
+    const wordCount = finalContent.split(/\s+/).length;
+    const usedPrompt = Boolean(activeThemeId);
+    posthog?.capture('journal_entry_created', {
+      word_count: wordCount,
+      tag_count: tags.length,
+      used_prompt: usedPrompt,
+      from_reminder: consumeReminderAttribution(),
+    });
+    posthogLogs.info('Journal entry saved', {
+      word_count: wordCount,
+      tag_count: tags.length,
+      used_prompt: usedPrompt,
+    });
 
     setLoading(false);
     router.replace('/(tabs)');

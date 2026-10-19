@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { ReliableSwitch } from '@/components/reliable-switch';
 import { scheduleReminderOccurrences, cancelAllForReminder } from '@/lib/reminder-notifications';
+import { posthog } from '@/lib/posthog';
 
 function timeToDate(hour: number, minute: number): Date {
   const d = new Date();
@@ -112,6 +113,12 @@ export default function ReminderScreen() {
     }
     if (reminderId) {
       await scheduleReminderOccurrences({ id: reminderId, ...payload, enabled: isNew ? true : enabled });
+      posthog?.capture('reminder_saved', {
+        action: isNew ? 'created' : 'updated',
+        day_count: payload.days_of_week.length,
+        has_pursuit: Boolean(themeId),
+        skip_if_journaled: skipIfJournaled,
+      });
     }
     setSaving(false);
     router.back();

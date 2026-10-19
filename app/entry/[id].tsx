@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
+import { posthog } from '@/lib/posthog';
 import { getPendingEntries, loadCachedEntries } from '@/lib/offline-entries';
 
 function formatDuration(ms: number) {
@@ -154,6 +155,11 @@ export default function EntryDetailScreen() {
       if (tagRow) await supabase.from('entry_tags').insert({ entry_id: id, tag_id: tagRow.id });
     }
 
+    posthog?.capture('journal_entry_updated', {
+      word_count: content.trim().split(/\s+/).length,
+      tag_count: editTags.length,
+    });
+
     setEntry(prev => prev ? { ...prev, content: content.trim() } : prev);
     setTags(editTags.map(t => ({ id: t.name, name: t.name, category: t.category })));
     setSaving(false);
@@ -166,7 +172,12 @@ export default function EntryDetailScreen() {
       {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
-          await supabase.from('journal_entries').delete().eq('id', id);
+          const { error: deleteError } = await supabase.from('journal_entries').delete().eq('id', id);
+          if (deleteError) {
+            setError(deleteError.message);
+            return;
+          }
+          posthog?.capture('journal_entry_deleted');
           router.replace('/(tabs)');
         },
       },
@@ -307,7 +318,7 @@ export default function EntryDetailScreen() {
           ) : null}
 
           {error ? (
-            <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
+            <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 }}>
               <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
             </View>
           ) : null}

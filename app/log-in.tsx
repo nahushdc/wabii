@@ -7,6 +7,8 @@ import { signInWithGoogle } from '@/lib/auth';
 import { AppleSignInButton } from '@/components/apple-sign-in-button';
 import { PasswordInput } from '@/components/password-input';
 import { WarmBackground } from '@/components/warm-background';
+import { posthog } from '@/lib/posthog';
+import { posthogLogs } from '@/lib/posthog-logs';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -24,7 +26,11 @@ export default function LogInScreen() {
     const { error: err } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (err) setError(err.message);
-    else router.replace('/(tabs)');
+    else {
+      posthog?.capture('user_logged_in', { login_method: 'email_password' });
+      posthogLogs.info('Authenticated session established', { auth_method: 'email_password' });
+      router.replace('/(tabs)');
+    }
   }
 
   async function handleGoogle() {

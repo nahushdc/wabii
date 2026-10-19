@@ -14,6 +14,7 @@ import { registerForPushNotifications } from '@/lib/notifications';
 import { COLORS } from '@/constants/colors';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { useSetOnboardingComplete } from './_layout';
+import { posthog } from '@/lib/posthog';
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
@@ -91,6 +92,11 @@ export default function OnboardingScreen() {
   const isTimeStep = step === 'time';
   const isInsightStep = step === 'insight';
   const [timeAnswer, setTimeAnswer] = useState<TimeAnswer | null>(null);
+
+  // Funnel: one event per step shown, so drop-off is visible step by step.
+  useEffect(() => {
+    posthog?.capture('onboarding_step_viewed', { step: step ?? 'intro' });
+  }, [step]);
   const [loading, setLoading] = useState(false);
   const [finishingAction, setFinishingAction] = useState<'enable' | 'skip' | null>(null);
   const [name, setName] = useState('');
@@ -201,6 +207,10 @@ export default function OnboardingScreen() {
     } finally {
       setLoading(false);
       setFinishingAction(null);
+      posthog?.capture('onboarding_completed', {
+        reminders_enabled: withReminders,
+        reminder_count: withReminders ? selectedReminders.size : 0,
+      });
       setOnboardingComplete(true);
       router.replace('/(tabs)');
     }

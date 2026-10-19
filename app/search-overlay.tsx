@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { posthog } from '@/lib/posthog';
 
 type Result = {
   id: string;
@@ -114,6 +115,10 @@ export default function SearchOverlayScreen() {
     setResults(data.results ?? []);
     setSummaryShort(data.summary_short ?? '');
     setSummaryPoints(data.summary_points ?? []);
+    posthog?.capture('search_completed', {
+      result_count: data.results?.length ?? 0,
+      has_ai_summary: Boolean(data.summary_short),
+    });
 
     const { error: historyErr } = await historyInsert;
     if (historyErr) {

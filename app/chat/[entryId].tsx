@@ -8,6 +8,7 @@ import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { LiveWaveform } from '@/components/voice-pulse';
+import { posthog } from '@/lib/posthog';
 
 type Message = {
   id: string;
@@ -158,6 +159,9 @@ export default function ChatScreen() {
       setError('Something went wrong sending that. Please try again.');
       return;
     }
+    posthog?.capture('reflection_chat_message_sent', {
+      message_length: text.length,
+    });
     setMessages(prev => [...prev, { id: tempId(), role: 'assistant', content: data.reply }]);
   }
 
