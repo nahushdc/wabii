@@ -228,6 +228,7 @@ export default function ProfileScreen() {
             <MenuItem label="Pursuits" icon="edit-3" onPress={handlePursuitsPress} />
             <MenuItem label="Share with coach" icon="share-2" onPress={() => router.push('/therapist-invite')} />
             <MenuItem label="Export & Import" icon="download" onPress={() => router.push('/export')} />
+            <MenuItem label="How we keep it private" icon="shield" onPress={() => router.push('/privacy-intro?from=profile')} />
             <MenuItem label="Help" icon="help-circle" onPress={() => router.push('/help')} />
           </View>
 

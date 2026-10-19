@@ -14,6 +14,7 @@ import { LaunchScreen } from '@/components/launch-screen';
 import { AppLockScreen } from '@/components/app-lock-screen';
 import { UpdateBanner } from '@/components/update-banner';
 import { syncPendingEntries } from '@/lib/offline-entries';
+import { hasSeenPrivacyIntro } from '@/lib/privacy-intro';
 import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
 import {
@@ -43,8 +44,13 @@ function AuthGuard({ session, onboardingComplete }: { session: Session | null | 
     const currentRoute = segments[0] as string;
     const inPublicRoute = PUBLIC_ROUTES.includes(currentRoute);
 
-    if (!session && !inPublicRoute) {
-      router.replace('/log-in');
+    if (!session) {
+      // New people see how their data is handled before anything else, once.
+      if (currentRoute === 'privacy-intro') return;
+      hasSeenPrivacyIntro().then(seen => {
+        if (!seen) router.replace('/privacy-intro');
+        else if (!inPublicRoute) router.replace('/log-in');
+      });
     } else if (session && inPublicRoute && currentRoute !== 'reset-password') {
       router.replace('/(tabs)');
     } else if (session && onboardingComplete === false && currentRoute !== 'onboarding') {
