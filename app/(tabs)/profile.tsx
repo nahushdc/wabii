@@ -124,14 +124,14 @@ export default function ProfileScreen() {
     const waiting = (await getPendingEntries()).filter(p => p.user_id === userId).length;
 
     const warning = waiting > 0
-      ? `\n\n${waiting} ${waiting === 1 ? 'entry is' : 'entries are'} saved only on this phone and ${waiting === 1 ? "hasn't" : "haven't"} uploaded yet. Deleting now loses ${waiting === 1 ? 'it' : 'them'}, and an export won\u2019t include ${waiting === 1 ? 'it' : 'them'}. Connect to the internet to upload first.`
+      ? `\n\n${waiting} ${waiting === 1 ? 'entry exists' : 'entries exist'} only on this phone and ${waiting === 1 ? "hasn't" : "haven't"} uploaded yet. Deleting now loses ${waiting === 1 ? 'it' : 'them'} too, and an export won\u2019t include ${waiting === 1 ? 'it' : 'them'}. Connect to the internet to upload ${waiting === 1 ? 'it' : 'them'} first.`
       : '';
 
     Alert.alert(
-      'Delete your account?',
-      'This permanently deletes your account and everything in it: journal entries, reflections, tags, reminders and chats. It can\u2019t be undone.\n\nWe recommend saving a copy of your journal first.' + warning,
+      'Delete everything you\u2019ve understood about yourself?',
+      'Your entries, the patterns we\u2019ve found and every reflection will be erased for good. It can\u2019t be undone.\n\nSave a copy of your journal first, so you keep what you\u2019ve written.' + warning,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Keep my journal', style: 'cancel' },
         { text: 'Export my journal', onPress: () => router.push('/export') },
         { text: 'Delete account', style: 'destructive', onPress: deleteAccount },
       ]
