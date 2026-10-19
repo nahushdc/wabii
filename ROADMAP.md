@@ -266,6 +266,24 @@ Run this as a short in-app or survey question to the TestFlight group, and
 decide after seeing the split. It also informs item 7, since tone-based emotion
 detection would need the audio.
 
+### 9. Big, vague questions as pursuits (to design)
+
+People arrive with questions like "Who am I?", "What do I want from life?" and
+"What kind of person am I?". Pursuits should be able to hold these, but they are
+too large for the app to track as they stand: unlike "Why do I sabotage myself?",
+there is no single pattern to count.
+
+- **Open problem:** how to turn a huge question into things the app can actually
+  follow in someone's writing. A starting idea is facets: how they describe
+  themselves ("I'm the kind of person who..."), what they value, what energises or
+  drains them, what they keep returning to, and how any of that shifts over time.
+- **Related:** Map of You (item 1 above) and the pursuit redesign, where a pursuit
+  is a saved question answered from the whole journal.
+- **Cold start:** with no entries yet, the page needs to invite writing (for
+  example "Finish this sentence: I'm someone who...") instead of showing nothing.
+- **Consent:** a pursuit created from what someone said in onboarding should say
+  why it was added, and be easy to change or remove.
+
 ## Already shipped (context)
 
 - Text / live-voice (Deepgram streaming) / talk-it-through chat entry capture
