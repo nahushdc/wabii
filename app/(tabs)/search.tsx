@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
 import { openSearch } from '@/lib/open-search';
+import { fetchPursuitCounts, startPursuit } from '@/lib/pursuits';
 
 type ThemeOption = { id: string; name: string };
 
@@ -216,7 +217,6 @@ function formatRelative(iso: string) {
 
 export default function SearchScreen() {
   const [themes, setThemes] = useState<ThemeOption[]>([]);
-  const [insightLoadingId, setInsightLoadingId] = useState<string | null>(null);
   const [latestMonthly, setLatestMonthly] = useState<MonthlyDigest | null>(null);
   const [weeklyDigests, setWeeklyDigests] = useState<WeeklyDigestSummary[]>([]);
   const [pursuitCounts, setPursuitCounts] = useState<Record<string, number>>({});
@@ -224,14 +224,15 @@ export default function SearchScreen() {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<Set<FeedType>>(new Set(ALL_FEED_TYPES));
 
-  useEffect(() => {
-    supabase.from('prompt_themes').select('id, name').eq('status', 'active').order('created_at', { ascending: false }).then(({ data }) => {
-      setThemes(data ?? []);
-    });
-  }, []);
-
   useFocusEffect(
     useCallback(() => {
+      supabase
+        .from('prompt_themes')
+        .select('id, name')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .then(({ data }) => setThemes(data ?? []));
+
       supabase
         .from('monthly_digests')
         .select('id, content, month_start, seen_at, insights')
@@ -259,6 +260,7 @@ export default function SearchScreen() {
           }
           setPursuitCounts(counts);
         });
+      fetchPursuitCounts().then(counts => { if (counts) setPursuitCounts(prev => ({ ...prev, ...counts })); });
 
       Promise.all([
         supabase
@@ -316,23 +318,6 @@ export default function SearchScreen() {
       });
     }, [])
   );
-
-  async function handleSeeInsights(theme: ThemeOption) {
-    setInsightLoadingId(theme.id);
-    const { data, error: err } = await supabase.functions.invoke('theme-insights', {
-      body: { theme_id: theme.id },
-    });
-    setInsightLoadingId(null);
-    if (err || data?.error) return;
-
-    if (data?.insufficient) {
-      router.push(
-        `/theme-insight/pending?themeId=${theme.id}&themeName=${encodeURIComponent(data.theme_name)}&count=${data.count}&needed=${data.needed}`
-      );
-      return;
-    }
-    if (data?.id) router.push(`/theme-insight/${data.id}`);
-  }
 
   const filteredFeed = selectedTypes.size === ALL_FEED_TYPES.length
     ? feed
@@ -451,19 +436,40 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {/* Pursuits — tall poster cards */}
-      {themes.length > 0 && (
-        <View style={{ marginTop: 20, marginBottom: 22 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 10 }}>
-            <Text style={{
-              fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.4, textTransform: 'uppercase', color: '#a8a29e',
-            }}>
-              Pursuits
-            </Text>
-            <Pressable onPress={() => router.push('/prompt-themes')} hitSlop={10}>
+      {/* Pursuits — questions about yourself, answered from the whole journal */}
+      <View style={{ marginTop: 20, marginBottom: 22 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 10 }}>
+          <Text style={{
+            fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.4, textTransform: 'uppercase', color: '#a8a29e',
+          }}>
+            Pursuits
+          </Text>
+          {themes.length > 0 && (
+            <Pressable onPress={startPursuit} hitSlop={10}>
               <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: COLORS.primary }}>Add</Text>
             </Pressable>
-          </View>
+          )}
+        </View>
+        {themes.length === 0 ? (
+          <Pressable
+            onPress={startPursuit}
+            accessibilityRole="button"
+            style={{
+              marginHorizontal: 20, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#d6cdc3', borderRadius: 22,
+              paddingHorizontal: 18, paddingVertical: 18, flexDirection: 'row', alignItems: 'center', gap: 14,
+            }}>
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#FDE6DB', alignItems: 'center', justifyContent: 'center' }}>
+              <Feather name="compass" size={20} color={COLORS.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#1c1917' }}>Add your first pursuit</Text>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12.5, lineHeight: 17, color: '#78716c', marginTop: 1 }}>
+                A question you want to answer about yourself.
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#c4b9b0" />
+          </Pressable>
+        ) : (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -475,15 +481,12 @@ export default function SearchScreen() {
               return (
                 <Pressable
                   key={theme.id}
-                  onPress={() => handleSeeInsights(theme)}
-                  disabled={insightLoadingId === theme.id}
+                  onPress={() => router.push(`/pursuit/${theme.id}`)}
                   style={{
                     width: 124, height: 132, backgroundColor: card.bg, borderRadius: 22, padding: 14,
                     justifyContent: 'space-between',
                   }}>
-                  {insightLoadingId === theme.id
-                    ? <ActivityIndicator size="small" color={card.ink} style={{ alignSelf: 'flex-start' }} />
-                    : <Feather name="compass" size={18} color={card.ink} />}
+                  <Feather name="compass" size={18} color={card.ink} />
                   <View>
                     <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 28, color: card.ink, lineHeight: 30 }}>{count}</Text>
                     <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12.5, color: card.ink, marginTop: 3 }} numberOfLines={2}>
@@ -494,8 +497,8 @@ export default function SearchScreen() {
               );
             })}
           </ScrollView>
-        </View>
-      )}
+        )}
+      </View>
 
       {/* Divider — everything below is the activity feed */}
       <View style={{ height: 1, backgroundColor: '#ede8e0', marginHorizontal: 24, marginBottom: 18 }} />
