@@ -469,7 +469,7 @@ export default function OnboardingScreen() {
                   In a trial of adults with anxiety symptoms, compared with 31% who didn't journal. They wrote for 15 minutes, three times a week. A regular time makes that easier to keep up.
                 </Text>
                 <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#a8a29e', lineHeight: 17, marginTop: 14 }}>
-                  Small early study of 70 adults. Smyth et al., JMIR Mental Health, 2018.
+                  A small study of adults. Smyth et al., JMIR Mental Health, 2018.
                 </Text>
               </>
             ) : (
