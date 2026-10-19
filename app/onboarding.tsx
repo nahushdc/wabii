@@ -459,14 +459,17 @@ export default function OnboardingScreen() {
             {needsNudge ? (
               <>
                 <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#78716c', marginBottom: 8 }}>
-                  You're not alone in this
+                  Why it's worth showing up
                 </Text>
-                <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 72, color: COLORS.primary, lineHeight: 78 }}>50%</Text>
+                <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 72, color: COLORS.primary, lineHeight: 78 }}>56%</Text>
                 <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', lineHeight: 31, marginTop: 10, marginBottom: 16 }}>
-                  more consistent when they get a gentle reminder
+                  said their mental health improved after a month of journaling
                 </Text>
                 <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#78716c', lineHeight: 23 }}>
-                  People who find it hard to make time journal far more often with a nudge at a set time. It takes the remembering off your plate.
+                  In a trial of adults with anxiety symptoms, compared with 31% who didn't journal. They wrote for 15 minutes, three times a week. A regular time makes that easier to keep up.
+                </Text>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#a8a29e', lineHeight: 17, marginTop: 14 }}>
+                  Small early study of 70 adults. Smyth et al., JMIR Mental Health, 2018.
                 </Text>
               </>
             ) : (
