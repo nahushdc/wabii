@@ -1,15 +1,30 @@
 import "@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'npm:@supabase/supabase-js';
-import Anthropic from 'npm:@anthropic-ai/sdk';
+import AnthropicClient from 'npm:@anthropic-ai/sdk';
+import { Anthropic } from 'npm:@posthog/ai/anthropic';
+import { PostHog } from 'npm:posthog-node';
+import { getPrompt } from '../_shared/prompts.ts';
+
+const posthogProjectToken = Deno.env.get('POSTHOG_PROJECT_TOKEN');
+const posthogHost = Deno.env.get('POSTHOG_HOST');
+const posthog = posthogProjectToken && posthogHost
+  ? new PostHog(posthogProjectToken, {
+      host: posthogHost,
+      privacyMode: true,
+      flushAt: 1,
+      flushInterval: 0,
+      enableExceptionAutocapture: true,
+    })
+  : undefined;
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-const anthropic = new Anthropic({
-  apiKey: Deno.env.get('ANTHROPIC_API_KEY')!,
-});
+const anthropic = posthog
+  ? new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')!, posthog })
+  : new AnthropicClient({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
 
 // Lightweight guardrail, not a clinical safety system — catches explicit
 // self-harm/suicide language and routes to a fixed, resource-bearing reply
@@ -35,16 +50,6 @@ I'm here if you want to keep writing or talking, but please don't carry this alo
 function containsCrisisLanguage(text: string): boolean {
   return CRISIS_PATTERNS.some((p) => p.test(text));
 }
-
-const SYSTEM_PROMPT = `You are a warm, curious journaling companion inside Wabii. Someone is composing today's journal entry by talking it through with you instead of writing it alone.
-
-How you show up:
-- Ask one thoughtful question at a time to help them unpack what's on their mind — don't interrogate.
-- Validate feelings without being saccharine or generic.
-- Be genuinely curious about specifics — what happened, what they noticed, what they're avoiding.
-- Keep responses short — 2-3 sentences, conversational, not a lecture.
-- You are not a licensed therapist. Don't diagnose. If something sounds like it needs professional support, say so plainly and kindly.
-- This conversation IS the journal entry — you're helping them think out loud, not reflecting on something already written.`;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -125,8 +130,13 @@ Deno.serve(async (req) => {
     const completion = await anthropic.messages.create({
       model: 'claude-sonnet-4-5',
       max_tokens: 300,
-      system: SYSTEM_PROMPT,
+      system: await getPrompt(supabase, 'journal_chat_system'),
       messages: turns,
+      ...(posthog ? {
+        posthogDistinctId: user.id,
+        posthogTraceId: crypto.randomUUID(),
+        posthogProperties: { $ai_session_id: `journal-chat-${conversation.id}` },
+      } : {}),
     });
 
     const reply = completion.content[0].type === 'text' ? completion.content[0].text : '';
@@ -137,5 +147,7 @@ Deno.serve(async (req) => {
     return json({ conversation_id: conversation.id, reply });
   } catch (err) {
     return json({ error: err.message }, 500);
+  } finally {
+    await posthog?.flush();
   }
 });

@@ -4,15 +4,35 @@
     {
       "name": "wabii-web",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["expo", "start", "--web"],
+      "runtimeArgs": [
+        "expo",
+        "start",
+        "--web"
+      ],
       "port": 8081
     },
     {
       "name": "ndc-site-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/hellofi/Documents/Sites/ndc-site", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/hellofi/Documents/Sites/ndc-site",
+        "run",
+        "dev"
+      ],
       "port": 4321,
       "autoPort": true
+    },
+    {
+      "name": "admin-dashboard",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "admin-dashboard",
+        "run",
+        "dev"
+      ],
+      "port": 5173
     }
   ]
 }

@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js';
+import { REMINDER_ZONE_DEFAULTS } from '../_shared/notification-messages.ts';
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -41,9 +42,31 @@ function getStartOfLocalDay(timezone: string, date: Date): Date {
   return new Date(midnightNaive.getTime() + offsetMs);
 }
 
+// Zone copy lives in `notification_zones` (editable from the admin dashboard);
+// these built-in defaults are only used if the table is empty or unreachable.
+type Zone = { start_hour: number; title: string; bodies: string[] };
+
+const FALLBACK_ZONES: Zone[] = REMINDER_ZONE_DEFAULTS;
+
+async function loadZones(): Promise<Zone[]> {
+  const { data } = await supabase.from('notification_zones').select('start_hour, title, bodies').order('start_hour');
+  return data && data.length > 0 ? (data as Zone[]) : FALLBACK_ZONES;
+}
+
+// A zone runs until the next zone's start_hour; hours before the first start
+// belong to the last zone (late night).
+function zoneFor(hour: number, zones: Zone[]): Zone {
+  let match = zones[zones.length - 1];
+  for (const zone of zones) {
+    if (zone.start_hour <= hour) match = zone;
+  }
+  return match;
+}
+
 Deno.serve(async () => {
   try {
     const now = new Date();
+    const zones = await loadZones().catch(() => FALLBACK_ZONES);
 
     // Fetch all enabled reminders, joined with the owning user's push token and timezone
     const { data: reminders, error } = await supabase
@@ -96,10 +119,14 @@ Deno.serve(async () => {
         }
       }
 
+      // Rotate the body by day so it changes daily.
+      const zone = zoneFor(localHour, zones);
+      const dayIndex = Math.floor(now.getTime() / 86_400_000);
+
       toSend.push({
         to: user.push_token,
-        title: 'Time to reflect 🌿',
-        body: reminder.message?.trim() || "How was your day? Take a moment to write.",
+        title: zone.title,
+        body: reminder.message?.trim() || zone.bodies[dayIndex % zone.bodies.length],
         sound: 'default',
         data: { prompt_theme_id: reminder.prompt_theme_id ?? null },
       });

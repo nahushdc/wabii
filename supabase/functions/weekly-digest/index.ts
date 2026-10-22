@@ -1,15 +1,31 @@
 import "@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'npm:@supabase/supabase-js';
-import Anthropic from 'npm:@anthropic-ai/sdk';
+import AnthropicClient from 'npm:@anthropic-ai/sdk';
+import { Anthropic } from 'npm:@posthog/ai/anthropic';
+import { PostHog } from 'npm:posthog-node';
+import { getPrompt } from '../_shared/prompts.ts';
+import { getNotificationMessage } from '../_shared/notification-messages.ts';
+
+const posthogProjectToken = Deno.env.get('POSTHOG_PROJECT_TOKEN');
+const posthogHost = Deno.env.get('POSTHOG_HOST');
+const posthog = posthogProjectToken && posthogHost
+  ? new PostHog(posthogProjectToken, {
+      host: posthogHost,
+      privacyMode: true,
+      flushAt: 1,
+      flushInterval: 0,
+      enableExceptionAutocapture: true,
+    })
+  : undefined;
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-const anthropic = new Anthropic({
-  apiKey: Deno.env.get('ANTHROPIC_API_KEY')!,
-});
+const anthropic = posthog
+  ? new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')!, posthog })
+  : new AnthropicClient({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
 
 function toLocalDateStr(iso: string): string {
   // Returns YYYY-MM-DD in UTC (server has no user tz, so we compare dates consistently)
@@ -76,6 +92,8 @@ async function generateInsights(
   entriesText: string,
   previousInsights: DigestInsights | null,
   periodLabel: string,
+  userId: string,
+  traceId: string,
 ): Promise<DigestInsights | null> {
   const knownPatterns: PatternEntry[] = previousInsights
     ? [
@@ -95,28 +113,14 @@ async function generateInsights(
     messages: [
       {
         role: 'user',
-        content: `Analyze these journal entries from the past ${periodLabel} and return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
-
-{
-  "moods": string[],
-  "new_patterns": string[],
-  "repeating_patterns": [{"pattern": string, "count": number}],
-  "attention_patterns": [{"pattern": string, "count": number}]
-}
-
-Rules:
-- "moods": 2-6 single words or short phrases naming the emotional tones actually present across these entries (e.g. "anxious", "hopeful", "overwhelmed"). Be specific and varied, not generic.
-- "new_patterns": short (under 12 words) descriptions of genuine behavioral/emotional/thought patterns that appear for the FIRST time this period. Plain strings, no count (a new pattern is implicitly 1x).
-- "repeating_patterns": patterns that were also present in a previous period AND still genuinely show up here. Each is {"pattern": short description, "count": previous count + 1}. Reuse the SAME wording as the previous pattern when it's the same pattern, so it can be matched — only rephrase if the pattern itself has evolved.
-- "attention_patterns": a SUBSET of repeating_patterns (same {"pattern","count"} shape, same count) for ones that seem stuck, avoided, or causing ongoing distress — worth gently flagging. Do not diagnose. Leave empty if nothing genuinely warrants it.
-- Every pattern must be grounded in the actual entries below — never invent one, and never carry a previous pattern forward if it doesn't genuinely appear this period. If there's too little material, return shorter or empty arrays rather than padding them.
-- Keep each pattern description short enough to show as a single line in a UI.
-${previousPatternsSection}
-
-Journal entries:
-${entriesText}`,
+        content: await getPrompt(supabase, 'digest_insights', { period_label: periodLabel, previous_patterns_section: previousPatternsSection, entries: entriesText }),
       },
     ],
+    ...(posthog ? {
+      posthogDistinctId: userId,
+      posthogTraceId: traceId,
+      posthogProperties: { $ai_session_id: `weekly-digest-${userId}` },
+    } : {}),
   });
 
   const raw = message.content[0].type === 'text' ? message.content[0].text : '';
@@ -167,8 +171,11 @@ Deno.serve(async (req) => {
     if (usersError) throw usersError;
 
     const results = [];
+    // Editable from the control panel; falls back to the built-in text.
+    const readyMessage = await getNotificationMessage(supabase, 'weekly_digest_ready');
 
     for (const user of users ?? []) {
+      const aiTraceId = crypto.randomUUID();
       if (user.weekly_reflections_enabled === false) {
         results.push({ user_id: user.id, status: 'skipped — weekly reflections disabled' });
         continue;
@@ -244,19 +251,14 @@ ${pursuitBlocks}`;
         messages: [
           {
             role: 'user',
-            content: `You are a thoughtful, warm reflection companion. Below are someone's journal entries from the past week. Write a weekly digest that feels personal and insightful — not generic.
-
-Your digest should:
-- Notice specific patterns, themes, or recurring feelings across the entries
-- Highlight moments of growth, tension, or shift — name them specifically
-- Be honest but kind — this is for the person's own reflection, not an evaluation
-- Feel like it was written by someone who actually read every word, not a summary bot
-- Be 3–4 paragraphs. No bullet points. No headers. Just thoughtful prose.
-${streakPromptSection}${pursuitsPromptSection}
-Journal entries:
-${entriesText}`,
+            content: await getPrompt(supabase, 'weekly_digest', { streak_section: streakPromptSection, pursuits_section: pursuitsPromptSection, entries: entriesText }),
           },
         ],
+        ...(posthog ? {
+          posthogDistinctId: user.id,
+          posthogTraceId: aiTraceId,
+          posthogProperties: { $ai_session_id: `weekly-digest-${user.id}` },
+        } : {}),
       });
 
       const digestContent = message.content[0].type === 'text' ? message.content[0].text : '';
@@ -270,7 +272,7 @@ ${entriesText}`,
         .limit(1)
         .maybeSingle();
 
-      const insights = await generateInsights(entriesText, previousDigest?.insights ?? null, 'week').catch(() => null);
+      const insights = await generateInsights(entriesText, previousDigest?.insights ?? null, 'week', user.id, aiTraceId).catch(() => null);
 
       const { data: inserted, error: insertError } = await supabase
         .from('weekly_digests')
@@ -291,8 +293,8 @@ ${entriesText}`,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify([{
             to: user.push_token,
-            title: 'Your weekly reflection is ready 🌿',
-            body: 'A look back at your week, and the pursuits you explored.',
+            title: readyMessage.title,
+            body: readyMessage.body,
             sound: 'default',
             data: { weekly_digest_id: inserted.id },
           }]),
@@ -307,5 +309,7 @@ ${entriesText}`,
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+  } finally {
+    await posthog?.flush();
   }
 });

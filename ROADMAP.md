@@ -131,10 +131,10 @@ of it is live until the SQL is run and the functions are deployed.
   (uncommitted rewrite) fetches them, caches the last good copy on the phone, and
   falls back to built-in copy if offline. `send-reminders` (server push path) uses
   the same zones.
-- **Open decision:** the built-in fallback copy in that rewrite is the older
-  generic wording ("Good Morning! 🌅 …"), not the warmer lines written earlier
-  (e.g. "A fresh page is waiting. What do you want to carry into today?"). Pick one
-  before committing.
+- **Decided copy:** each zone keeps the generic title and message ("Good
+  Morning! 🌅 …") as its first message, followed by four warmer lines (e.g. "A
+  fresh page is waiting. What do you want to carry into today?"), rotating daily.
+  The control panel can restore this set at any time.
 - **Limits:** notifications are scheduled locally on each phone, so the server
   can't see delivery or open rates. Changing copy only reaches phones that have
   the new app build and have re-synced reminders on foreground.
