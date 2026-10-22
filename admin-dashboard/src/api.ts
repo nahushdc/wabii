@@ -84,17 +84,9 @@ export type DeepgramBalance = {
   total_usd: number;
 };
 
-export type VoiceUsage = {
-  per_day: { day: string; sessions: number; minutes: number; cost: number }[];
-  totals: { sessions: number; minutes: number; cost: number };
-  unique_users: number;
-  rates: { en: number; multi: number };
-};
-
-export type Concurrency = {
-  active_now: number;
-  peak_overall: number;
-  rejected_total: number;
-  recent_rejections: { at: string; reason: string | null; user_id: string | null }[] | null;
-  limit: number;
+export type DeepgramUsage = {
+  project_name: string | null;
+  per_day: { day: string; minutes: number; requests: number; cost: number }[] | null;
+  totals: { minutes: number; requests: number; cost: number };
+  cost_error: string | null;
 };

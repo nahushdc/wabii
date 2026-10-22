@@ -85,7 +85,7 @@ function days(n: number) {
   return Array.from({ length: n }, (_, i) => {
     const d = new Date(Date.now() - (n - 1 - i) * 86400000);
     const minutes = Math.round((8 + 6 * Math.sin(i / 3) + i * 0.4) * 100) / 100;
-    return { day: d.toISOString().slice(0, 10), sessions: Math.round(minutes / 1.6), minutes, cost: Math.round(minutes * 0.0077 * 10000) / 10000 };
+    return { day: d.toISOString().slice(0, 10), requests: Math.round(minutes / 1.6), minutes, cost: Math.round(minutes * 0.0077 * 10000) / 10000 };
   });
 }
 
@@ -150,13 +150,12 @@ export async function mockCall(fn: string, body: Record<string, unknown>): Promi
       return { ok: true };
     case 'admin-deepgram:':
       return { project_id: 'demo', project_name: 'Wabii', balances: [{ id: 'b1', amount: 182.4, units: 'usd' }], total_usd: 182.4 };
-    case 'admin-stats:voice_usage': {
-      const per_day = days(Number(body.days ?? 30));
-      const totals = per_day.reduce((t, d) => ({ sessions: t.sessions + d.sessions, minutes: t.minutes + d.minutes, cost: t.cost + d.cost }), { sessions: 0, minutes: 0, cost: 0 });
-      return { per_day, totals, unique_users: 23, rates: { en: 0.0077, multi: 0.0092 } };
+    case 'admin-deepgram:usage': {
+      // ?mock&empty shows the no-usage state.
+      const per_day = days(Number(body.days ?? 30)).map((d) => new URLSearchParams(location.search).has('empty') ? { ...d, minutes: 0, requests: 0, cost: 0 } : d);
+      const totals = per_day.reduce((t, d) => ({ minutes: t.minutes + d.minutes, requests: t.requests + d.requests, cost: t.cost + d.cost }), { minutes: 0, requests: 0, cost: 0 });
+      return { project_name: 'Wabii', per_day, totals, cost_error: null };
     }
-    case 'admin-stats:concurrency':
-      return { active_now: 2, peak_overall: 7, rejected_total: 1, recent_rejections: [{ at: new Date(Date.now() - 5 * 3600000).toISOString(), reason: 'Deepgram 429: too many requests', user_id: null }], limit: 50 };
     default:
       throw new Error(`No sample data for ${fn} ${String(body.action ?? '')}`);
   }

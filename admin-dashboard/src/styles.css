@@ -197,3 +197,4 @@ textarea { resize: vertical; }
   padding: 9px 24px; font-size: 13px; font-weight: 550; text-align: center;
 }
 .card h2 .pill, h2 .pill { margin-left: 6px; vertical-align: 1px; }
+.chart-empty { border: 1px dashed var(--border); border-radius: 10px; padding: 28px 16px; text-align: center; margin-bottom: 8px; }
