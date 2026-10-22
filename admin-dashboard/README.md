@@ -20,6 +20,17 @@ Open http://localhost:5173/?mock to click through the screens with sample data (
 3. For the Deepgram credit panel, set a key that can read billing: `supabase secrets set DEEPGRAM_BILLING_KEY=...`
 4. For Google sign-in, add the panel's address (e.g. `http://localhost:5173` and the hosted URL) under Authentication → URL Configuration → Redirect URLs.
 
-## Hosting
+## Hosting (Railway)
 
-Deploy this folder to Vercel (root directory `admin-dashboard`). Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` as environment variables there.
+The panel is static files served by `serve` (`npm start`, listens on `$PORT`). Search engines are told not to index it (`serve.json`).
+
+From this folder:
+
+```bash
+railway init --name wabii-admin
+railway variables --set EXPO_PUBLIC_SUPABASE_URL=https://vkuxebtqryiphzeoecay.supabase.co --set EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon key from ../.env.local>
+railway up
+railway domain
+```
+
+The two variables are read at build time. Then add the address `railway domain` prints to Supabase → Authentication → URL Configuration → Redirect URLs, so Google sign-in returns to the panel.
