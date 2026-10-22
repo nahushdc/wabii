@@ -14,6 +14,7 @@ import { COLORS } from '@/constants/colors';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { cancelTodaysReminderOccurrencesIfJournaled } from '@/lib/reminder-notifications';
 import { VoiceMicControl } from '@/components/voice-pulse';
+import { DictationNotice } from '@/components/dictation-notice';
 import { posthog } from '@/lib/posthog';
 import { consumeReminderAttribution } from '@/lib/reminder-attribution';
 import { posthogLogs } from '@/lib/posthog-logs';
@@ -27,6 +28,7 @@ type Dictation = {
   isRecording: boolean;
   connecting: boolean;
   interimText: string;
+  error: string;
   amplitude: SharedValue<number>;
   start: () => void;
   stop: () => void;
@@ -142,11 +144,15 @@ function TextComposer({
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: 24, paddingTop: 8, marginBottom: bottomInset,
       }}>
-        {!dictation.isRecording && (
+        {dictation.error ? (
+          <View style={{ flex: 1, flexDirection: 'row', marginRight: 12 }}>
+            <DictationNotice message={dictation.error} />
+          </View>
+        ) : !dictation.isRecording ? (
           <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#c4b9b0' }}>
             {`${wordCount} ${wordCount === 1 ? 'word' : 'words'}`}
           </Text>
-        )}
+        ) : null}
         <VoiceMicControl
           isRecording={dictation.isRecording}
           connecting={dictation.connecting}
@@ -382,9 +388,9 @@ export default function NewEntryScreen() {
         </Text>
       </View>
 
-      {(error || live.error) ? (
+      {error ? (
         <View style={{ marginHorizontal: 24, marginTop: 8, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || (live.error && /connect|network|internet/i.test(live.error) ? 'Dictation needs internet. You can keep typing.' : live.error)}</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
         </View>
       ) : null}
 
@@ -394,7 +400,7 @@ export default function NewEntryScreen() {
         activeThemeId={activeThemeId} setActiveThemeId={setActiveThemeId}
         nightThemeId={nightThemeId} prompts={prompts} promptIndex={promptIndex} setPromptIndex={setPromptIndex}
         dictation={{
-          isRecording: live.isRecording, connecting: live.connecting, interimText: live.interimText,
+          isRecording: live.isRecording, connecting: live.connecting, interimText: live.interimText, error: live.error,
           amplitude: live.amplitude, start: startDictation, stop: stopDictation, cancel: cancelDictation,
         }}
       />
