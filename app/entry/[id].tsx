@@ -78,6 +78,8 @@ export default function EntryDetailScreen() {
   // Set when this is the phone's own copy (not yet uploaded, or offline): read-only.
   const [localNotice, setLocalNotice] = useState('');
   const dictationBaseRef = useRef('');
+  // While dictating, keep the newest words in view as the text grows.
+  const dictationScrollRef = useRef<ScrollView>(null);
   const { isRecording: isDictating, connecting: dictationConnecting, interimText, error: dictationError, durationMs, start: startDictationEngine, stop: stopDictationEngine } = useLiveTranscription({
     onFinalTranscript: (sessionTranscript) => {
       const base = dictationBaseRef.current;
@@ -277,7 +279,11 @@ export default function EntryDetailScreen() {
               as read-only text instead of an editable field — editing it
               mid-dictation would fight with the incoming transcript. */}
           {isDictating ? (
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 8 }}>
+            <ScrollView
+              ref={dictationScrollRef}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 8 }}
+              onContentSizeChange={() => dictationScrollRef.current?.scrollToEnd({ animated: false })}>
               <Text style={{ fontSize: 18, fontFamily: 'Inter_400Regular', color: '#1c1917', lineHeight: 30 }}>
                 {content}
                 {interimText ? <Text style={{ color: '#a8a29e' }}>{content ? ' ' : ''}{interimText}</Text> : null}

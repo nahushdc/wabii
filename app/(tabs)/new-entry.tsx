@@ -47,6 +47,8 @@ function TextComposer({
   dictation: Dictation;
 }) {
   const bottomInset = useBottomInset();
+  // While dictating, keep the newest words in view as the text grows.
+  const dictationScrollRef = useRef<ScrollView>(null);
   const wordCount = content.trim() === '' ? 0 : content.trim().split(/\s+/).length;
 
   return (
@@ -106,7 +108,11 @@ function TextComposer({
           read-only text instead of an editable field — editing it mid-dictation
           would fight with the incoming transcript. */}
       {dictation.isRecording ? (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}>
+        <ScrollView
+          ref={dictationScrollRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}
+          onContentSizeChange={() => dictationScrollRef.current?.scrollToEnd({ animated: false })}>
           <Text style={{ fontSize: 18, fontFamily: 'Inter_400Regular', color: '#1c1917', lineHeight: 30 }}>
             {content}
             {dictation.interimText ? <Text style={{ color: '#a8a29e' }}>{content && !/\s$/.test(content) ? ' ' : ''}{dictation.interimText}</Text> : null}
