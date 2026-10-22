@@ -61,3 +61,37 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/deepgram-token/deno.json"
 entrypoint = "./functions/deepgram-token/index.ts"
+
+# Live voice runs over a WebSocket; the function checks the token itself.
+[functions.transcribe-voice-live]
+enabled = true
+verify_jwt = false
+import_map = "./functions/transcribe-voice-live/deno.json"
+entrypoint = "./functions/transcribe-voice-live/index.ts"
+
+# Control panel functions. The browser's CORS preflight carries no token, so
+# the gateway check is off; each one checks the session and is_admin() itself
+# (requireAdmin in _shared/admin.ts).
+[functions.admin-prompts]
+enabled = true
+verify_jwt = false
+import_map = "./functions/admin-prompts/deno.json"
+entrypoint = "./functions/admin-prompts/index.ts"
+
+[functions.admin-notifications]
+enabled = true
+verify_jwt = false
+import_map = "./functions/admin-notifications/deno.json"
+entrypoint = "./functions/admin-notifications/index.ts"
+
+[functions.admin-deepgram]
+enabled = true
+verify_jwt = false
+import_map = "./functions/admin-deepgram/deno.json"
+entrypoint = "./functions/admin-deepgram/index.ts"
+
+[functions.admin-stats]
+enabled = true
+verify_jwt = false
+import_map = "./functions/admin-stats/deno.json"
+entrypoint = "./functions/admin-stats/index.ts"

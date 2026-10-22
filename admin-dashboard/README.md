@@ -15,8 +15,8 @@ Open http://localhost:5173/?mock to click through the screens with sample data (
 ## One-time setup in Supabase
 
 1. In the SQL editor, run these in order: `admin_foundation.sql`, `voice_sessions.sql`, `admin_stats.sql`, `ai_prompts_versioning.sql`, `notification_templates.sql` (all in `supabase/sql/`).
-2. Deploy the functions: `supabase functions deploy admin-prompts admin-notifications admin-deepgram admin-stats`.
-   Also redeploy the functions that now read prompts and notification text from the database.
+2. Deploy the functions. Login-check settings are pinned in `supabase/config.toml`:
+   `supabase functions deploy admin-prompts admin-notifications admin-deepgram admin-stats chat journal-chat search-entries suggest-pursuits theme-insights weekly-digest monthly-digest send-reminders transcribe-voice-live`
 3. For the Deepgram credit panel, set a key that can read billing: `supabase secrets set DEEPGRAM_BILLING_KEY=...`
 4. For Google sign-in, add the panel's address (e.g. `http://localhost:5173` and the hosted URL) under Authentication → URL Configuration → Redirect URLs.
 
