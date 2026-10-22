@@ -135,23 +135,43 @@ async function runSync() {
 
 // One upload run at a time; callers can fire this freely.
 export function syncPendingEntries(): Promise<void> {
+  purgeExpiredDraft().catch(() => {});
   if (!syncing) syncing = runSync().catch(() => {}).finally(() => { syncing = null; });
   return syncing;
 }
 
 // ---------- Draft ----------
 
+// A draft left behind (say, by closing the app) is kept for two days from the
+// last edit, then removed.
+const DRAFT_LIFETIME_MS = 2 * 24 * 60 * 60 * 1000;
+
 export async function saveDraft(content: string): Promise<void> {
   if (!content.trim()) {
     await FileSystem.deleteAsync(DRAFT_PATH, { idempotent: true }).catch(() => {});
     return;
   }
-  await writeJson(DRAFT_PATH, { content }).catch(() => {});
+  await writeJson(DRAFT_PATH, { content, updated_at: new Date().toISOString() }).catch(() => {});
 }
 
-export async function loadDraft(): Promise<string> {
-  const draft = await readJson<{ content?: string }>(DRAFT_PATH, {});
-  return draft.content ?? '';
+export type Draft = { content: string; savedAt: string };
+
+export async function loadDraft(): Promise<Draft | null> {
+  const draft = await readJson<{ content?: string; updated_at?: string }>(DRAFT_PATH, {});
+  if (!draft.content?.trim()) return null;
+  // A draft saved before timestamps existed starts its two days now.
+  const savedAt = draft.updated_at ?? new Date().toISOString();
+  if (Date.now() - new Date(savedAt).getTime() > DRAFT_LIFETIME_MS) {
+    await FileSystem.deleteAsync(DRAFT_PATH, { idempotent: true }).catch(() => {});
+    return null;
+  }
+  return { content: draft.content, savedAt };
+}
+
+// Runs whenever the app syncs (launch, foreground), so an expired draft is
+// removed even if the writing screen is never opened again.
+export async function purgeExpiredDraft(): Promise<void> {
+  await loadDraft();
 }
 
 export async function clearDraft(): Promise<void> {
