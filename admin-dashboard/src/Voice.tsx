@@ -113,7 +113,7 @@ function MinutesChart({ rows }: { rows: NonNullable<DeepgramUsage['per_day']> })
     <figure className="chart">
       <figcaption className="small muted">
         {active
-          ? <><strong>{fmt(active.day)}</strong> · {num(active.minutes, 1)} min · {num(active.requests)} connections · {usd(active.cost)}</>
+          ? <><strong>{fmt(active.day)}</strong> · {num(active.minutes, 1)} min · {num(active.requests)} {active.requests === 1 ? 'connection' : 'connections'} · {usd(active.cost)}</>
           : 'Audio minutes per day'}
       </figcaption>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Audio minutes per day" onMouseLeave={() => setHover(null)}>
