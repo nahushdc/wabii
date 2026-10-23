@@ -18,6 +18,10 @@ import { AppLockScreen } from '@/components/app-lock-screen';
 import { UpdateBanner } from '@/components/update-banner';
 import { syncPendingEntries } from '@/lib/offline-entries';
 import { hasSeenPrivacyIntro } from '@/lib/privacy-intro';
+import {
+  rememberUserId, getRememberedUserId, forgetRememberedUser,
+  cacheOnboardingComplete, getCachedOnboardingComplete, cacheAppLock, getCachedAppLock,
+} from '@/lib/offline-session';
 import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
 import {
@@ -74,27 +78,52 @@ function AuthGuard({ session, onboardingComplete }: { session: Session | null | 
 }
 
 async function loadOnboardingComplete(userId: string): Promise<boolean> {
-  const { data } = await supabase.from('users').select('onboarding_complete, force_onboarding').eq('id', userId).single();
+  rememberUserId(userId);
+  const { data, error } = await supabase.from('users').select('onboarding_complete, force_onboarding').eq('id', userId).single();
+  // No connection (or the server is down): don't send someone who has
+  // finished onboarding back through it. PGRST116 just means "no row yet",
+  // which is a genuinely new person.
+  if (error && error.code !== 'PGRST116') return (await getCachedOnboardingComplete(userId)) ?? true;
   // force_onboarding is a persistent testing switch — while it's on,
   // onboarding shows every launch regardless of whether it's actually been
   // completed, so it doesn't "stick" as done the moment you finish it once.
   if (data?.force_onboarding === true) return false;
-  return data?.onboarding_complete === true;
+  const complete = data?.onboarding_complete === true;
+  cacheOnboardingComplete(userId, complete);
+  return complete;
+}
+
+// An expired access token can't be refreshed without a connection, so supabase
+// hands back no session even though the person is still signed in on this
+// phone. Keep them in, working locally, until the connection returns and the
+// session refreshes itself.
+async function offlineSession(error: { name?: string } | null): Promise<Session | null> {
+  if (error?.name !== 'AuthRetryableFetchError') return null;
+  const userId = await getRememberedUserId();
+  if (!userId) return null;
+  return { user: { id: userId }, access_token: '', refresh_token: '', expires_in: 0, token_type: 'bearer' } as unknown as Session;
 }
 
 type AppLockSettings = { enabled: boolean; hash: string | null; salt: string | null };
 
 async function loadAppLockSettings(userId: string): Promise<AppLockSettings> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('users')
     .select('app_lock_enabled, app_lock_pin_hash, app_lock_pin_salt')
     .eq('id', userId)
     .single();
-  return {
+  // Offline, keep using the last known lock so going offline can't switch the
+  // PIN off.
+  if (error && error.code !== 'PGRST116') {
+    return (await getCachedAppLock(userId)) ?? { enabled: false, hash: null, salt: null };
+  }
+  const settings: AppLockSettings = {
     enabled: data?.app_lock_enabled === true && !!data?.app_lock_pin_hash && !!data?.app_lock_pin_salt,
     hash: data?.app_lock_pin_hash ?? null,
     salt: data?.app_lock_pin_salt ?? null,
   };
+  cacheAppLock(userId, settings);
+  return settings;
 }
 
 function handleNotificationResponse(router: ReturnType<typeof useRouter>, response: Notifications.NotificationResponse) {
@@ -158,7 +187,8 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session: stored }, error: sessionError }) => {
+      const session = stored ?? (await offlineSession(sessionError));
       setSession(session);
       if (session?.user?.id) {
         if (identifiedUserIdRef.current !== session.user.id) {
@@ -207,6 +237,7 @@ export default function RootLayout() {
         setLocked(lock.enabled);
       }
       if (event === 'SIGNED_OUT') {
+        forgetRememberedUser();
         posthog?.reset();
         identifiedUserIdRef.current = null;
         setOnboardingComplete(undefined);

@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '@/lib/supabase';
+import { getRememberedUserId, rememberUserId } from '@/lib/offline-session';
 
 // Offline-first journaling. A new entry is written to a small JSON file on the
 // phone first and uploaded in the background, so saving never depends on a
@@ -55,9 +56,16 @@ export function newEntryId(): string {
 }
 
 // getSession reads the stored session, so unlike getUser it needs no network.
+// But once the access token has expired it has to refresh it first, which
+// can't happen offline, and then it reports no session. Fall back to the
+// account remembered from the last time we saw one, so saving still works.
 export async function currentUserId(): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession();
-  return session?.user?.id ?? null;
+  if (session?.user?.id) {
+    rememberUserId(session.user.id);
+    return session.user.id;
+  }
+  return getRememberedUserId();
 }
 
 // ---------- Pending entries ----------
