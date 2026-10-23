@@ -9,6 +9,16 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_ANON_KEY')!
 );
 
+// Service-role client, used only to write usage rows into `voice_sessions`
+// for the admin dashboard. Logging is best-effort: a failed write must never
+// affect a user's transcription.
+const admin = createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
+
+const HEARTBEAT_MS = 30_000;
+
 // Relays raw PCM audio from the app straight through to Deepgram's live
 // streaming endpoint and relays transcript results straight back — the
 // Deepgram API key never reaches the client. WebSocket clients can't send
@@ -40,6 +50,48 @@ Deno.serve(async (req) => {
 
   const { socket, response } = Deno.upgradeWebSocket(req);
 
+  // --- usage logging -------------------------------------------------------
+  const startedAt = Date.now();
+  let audioBytes = 0;
+  let finished = false;
+  let sessionId: string | null = null;
+  const sessionReady = admin
+    .from('voice_sessions')
+    .insert({ user_id: data.user.id, language, status: 'active' })
+    .select('id')
+    .single()
+    .then(({ data: row }) => { sessionId = row?.id ?? null; }, () => {});
+
+  const heartbeat = setInterval(async () => {
+    await sessionReady;
+    if (sessionId) {
+      admin.from('voice_sessions')
+        .update({ last_seen_at: new Date().toISOString(), audio_bytes: audioBytes })
+        .eq('id', sessionId)
+        .then(() => {}, () => {});
+    }
+  }, HEARTBEAT_MS);
+
+  // Runs once per session, however it ends. A session that never got going
+  // because Deepgram refused it (e.g. 429 = concurrency limit hit) is recorded
+  // as 'rejected' so the dashboard can show when the limit is being hit.
+  async function finish(status: 'completed' | 'error' | 'rejected', rejectReason?: string) {
+    if (finished) return;
+    finished = true;
+    clearInterval(heartbeat);
+    await sessionReady;
+    if (!sessionId) return;
+    const now = new Date();
+    await admin.from('voice_sessions').update({
+      status,
+      reject_reason: rejectReason ?? null,
+      ended_at: now.toISOString(),
+      last_seen_at: now.toISOString(),
+      duration_seconds: (now.getTime() - startedAt) / 1000,
+      audio_bytes: audioBytes,
+    }).eq('id', sessionId).then(() => {}, () => {});
+  }
+
   // Nova-3 multilingual (code-switching between English + a handful of
   // other languages including Hindi) for India, Nova-3 monolingual English
   // everywhere else. endpointing=100 is Deepgram's recommendation for
@@ -65,11 +117,24 @@ Deno.serve(async (req) => {
     if (socket.readyState === WebSocket.OPEN) socket.send(data.toString());
   });
 
-  deepgramSocket.on('error', (err: Error) => {
-    console.warn('Deepgram socket error:', err.message);
+  // Deepgram answers the upgrade with a plain HTTP error (429 when the
+  // account's concurrent-connection limit is reached) instead of opening.
+  deepgramSocket.on('unexpected-response', (_req: unknown, res: { statusCode?: number; resume: () => void }) => {
+    res.resume();
+    console.warn('Deepgram refused connection:', res.statusCode);
+    finish('rejected', `deepgram_${res.statusCode ?? 'unknown'}`);
+    deepgramSocket.terminate();
   });
 
-  deepgramSocket.on('close', () => {
+  deepgramSocket.on('error', (err: Error) => {
+    console.warn('Deepgram socket error:', err.message);
+    finish(deepgramOpen ? 'error' : 'rejected', deepgramOpen ? `deepgram_error: ${err.message}` : `connect_failed: ${err.message}`);
+  });
+
+  deepgramSocket.on('close', (code: number) => {
+    // 1000 = normal; anything else after we connected means Deepgram dropped us.
+    finish(!deepgramOpen ? 'rejected' : code === 1000 || code === 1005 ? 'completed' : 'error',
+      !deepgramOpen ? 'closed_before_open' : code === 1000 || code === 1005 ? undefined : `deepgram_close_${code}`);
     if (socket.readyState === WebSocket.OPEN) socket.close();
   });
 
@@ -80,19 +145,19 @@ Deno.serve(async (req) => {
       return;
     }
     const chunk = e.data as ArrayBuffer;
+    audioBytes += chunk.byteLength;
     if (deepgramOpen) deepgramSocket.send(chunk);
     else pendingAudio.push(chunk);
   };
 
   socket.onerror = (e) => console.warn('Client socket error:', (e as ErrorEvent).message);
-  socket.onclose = () => {
-    if (deepgramSocket.readyState === WS.OPEN) deepgramSocket.close();
-  };
 
   EdgeRuntime.waitUntil(
     new Promise<void>((resolve) => {
-      socket.onclose = () => {
+      socket.onclose = async () => {
         if (deepgramSocket.readyState === WS.OPEN) deepgramSocket.close();
+        else if (deepgramSocket.readyState === WS.CONNECTING) deepgramSocket.terminate();
+        await finish('completed');
         resolve();
       };
     })

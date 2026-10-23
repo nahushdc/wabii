@@ -131,10 +131,10 @@ of it is live until the SQL is run and the functions are deployed.
   (uncommitted rewrite) fetches them, caches the last good copy on the phone, and
   falls back to built-in copy if offline. `send-reminders` (server push path) uses
   the same zones.
-- **Open decision:** the built-in fallback copy in that rewrite is the older
-  generic wording ("Good Morning! 🌅 …"), not the warmer lines written earlier
-  (e.g. "A fresh page is waiting. What do you want to carry into today?"). Pick one
-  before committing.
+- **Decided copy:** each zone keeps the generic title and message ("Good
+  Morning! 🌅 …") as its first message, followed by four warmer lines (e.g. "A
+  fresh page is waiting. What do you want to carry into today?"), rotating daily.
+  The control panel can restore this set at any time.
 - **Limits:** notifications are scheduled locally on each phone, so the server
   can't see delivery or open rates. Changing copy only reaches phones that have
   the new app build and have re-synced reminders on foreground.
@@ -161,6 +161,159 @@ of it is live until the SQL is run and the functions are deployed.
   build for day-to-day work.
 - **`.claude/launch.json`:** has an uncommitted `admin-dashboard` entry; commit it
   with the dashboard.
+
+### 6. AI accountability companion (planned, not built)
+
+A companion that helps people stay accountable to journaling and rebuild a lapsed
+streak, rather than relying on a silent push notification.
+
+- **Escalating nudge:** a notification at the reminder time; if there's no entry
+  within 15 minutes, a WhatsApp or iMessage message; if still nothing, a phone
+  call. This is the "Proactive reminders" card on the Reminders screen, currently
+  marked "Pro · Coming soon" and collecting interest in `feature_interest`
+  (`proactive_reminders`).
+- **Home nudge, deliberately off for now:** after 3 or more days without an entry
+  the home screen would show a quiet card under the streak pill ("Enable an AI
+  companion to help you stay accountable and build your streak") with an
+  "Enable companion" button into the waiting list. Designed and mocked up, but not
+  shipped; turn it on when the companion exists.
+- **Open questions:** which channels at launch (WhatsApp vs iMessage vs call),
+  consent and phone-number collection, quiet hours and a clear way to opt out,
+  per-message and per-call cost, and whether this sits behind a paid plan.
+
+### 7. Entry cards coloured by emotion (idea, not built)
+
+Today a card's colour is arbitrary: it is picked from a palette by the first
+character of the entry id (`app/(tabs)/index.tsx`, `CARD_COLORS`). The idea is to
+colour each card by the emotion in the entry, so the list becomes a glanceable
+mood history.
+
+**How intrusive is it, and can it work without reading the note?**
+Detecting emotion from text means something has to read the text; there is no
+way around that. What we control is *where* it is read and *what is kept*.
+
+- Entry text already goes to Claude for reflections, search and chat, so this is
+  not a new category of exposure. But those run on demand or weekly. Per-entry
+  detection would process *every* entry at save time, which is a step up and
+  should be disclosed in the privacy policy and be opt-in.
+- Keep only the result: store a single label from a fixed set (for example
+  calm, joyful, anxious, sad, angry, tired, mixed) in a new column such as
+  `journal_entries.mood`. Never store the model's reasoning, and have the prompt
+  return one word and nothing else.
+
+**Options for text, least to most intrusive**
+
+1. **User picks the mood** at save time (a small row of colours). Zero analysis,
+   zero privacy cost, and it produces ground truth for later.
+2. **On-device detection.** The text never leaves the phone. Apple's
+   NaturalLanguage sentiment is free but only gives positive/negative, and needs
+   a native module (so a new build, not an OTA update). A JS word-list approach
+   is OTA-able but coarse.
+3. **Server-side LLM at save time** (a small, cheap Claude model returning one
+   label). Richest and most accurate; the text is sent to the model once per
+   entry.
+4. **Hybrid (recommended):** ship 1 first, then add 3 as an opt-in setting
+   ("Colour my entries by mood") with a fixed label set, and always let the user
+   tap a card to correct its colour.
+
+**Voice entries**
+
+- *Words:* voice is already transcribed by Deepgram, so the transcript can go
+  through the same text path. No extra audio handling.
+- *Tone (pitch, pace, energy):* needs an audio emotion model, either a third-party
+  API or an on-device model. It is the most sensitive option, is much less
+  reliable than people expect (varies by accent, language, mic and person), and
+  would mean sending or analysing the raw voice. Not recommended for v1; revisit
+  only if users ask for it. Check data-protection rules before any voice-emotion
+  work.
+- Today the audio is relayed live to Deepgram and not kept by us (we only log
+  byte counts). Confirm Deepgram's own retention setting before making any claim
+  about this in the privacy policy.
+
+**Design and risk notes**
+
+- A wrong guess on a heavy entry (colouring grief as "joyful") feels worse than no
+  colour. Use a neutral colour when confidence is low, avoid red-means-bad
+  judgements, and always allow a correction.
+- Colour alone is not enough for accessibility; show the mood word in the entry
+  detail.
+- Decide whether to backfill existing entries (a one-off cost and a one-off
+  reading of every old entry, so it needs its own consent).
+- Feeds back into reflections: a stored mood per entry would make weekly and
+  monthly mood insights cheaper and more consistent.
+
+### 8. Beta question: voice recordings and local storage (to ask)
+
+We do not keep voice recordings today. Before deciding whether to, ask beta users:
+
+- Do you want a recording of what you said, kept alongside the written entry?
+- If yes, where: only on this phone, or backed up to your account?
+- Would you want to replay it, or is the transcript enough?
+- How long should it be kept, and should you be able to delete just the audio?
+
+What the answers decide:
+
+- **On-device only:** no server storage cost or privacy exposure, but recordings
+  are lost on uninstall or a new phone unless included in the device backup, and
+  there is no access from other devices.
+- **In the cloud (Supabase Storage):** works across devices, but adds storage
+  cost, a bigger privacy surface, the need to cover audio in the delete-account
+  flow and the privacy policy, and per-user access rules.
+- **Neither:** keep the current behaviour (transcript only), which is the
+  simplest and most private.
+
+Run this as a short in-app or survey question to the TestFlight group, and
+decide after seeing the split. It also informs item 7, since tone-based emotion
+detection would need the audio.
+
+### 9. Big, vague questions as pursuits (to design)
+
+People arrive with questions like "Who am I?", "What do I want from life?" and
+"What kind of person am I?". Pursuits should be able to hold these, but they are
+too large for the app to track as they stand: unlike "Why do I sabotage myself?",
+there is no single pattern to count.
+
+- **Open problem:** how to turn a huge question into things the app can actually
+  follow in someone's writing. A starting idea is facets: how they describe
+  themselves ("I'm the kind of person who..."), what they value, what energises or
+  drains them, what they keep returning to, and how any of that shifts over time.
+- **Related:** Map of You (item 1 above) and the pursuit redesign, where a pursuit
+  is a saved question answered from the whole journal.
+- **Cold start:** with no entries yet, the page needs to invite writing (for
+  example "Finish this sentence: I'm someone who...") instead of showing nothing.
+- **Consent:** a pursuit created from what someone said in onboarding should say
+  why it was added, and be easy to change or remove.
+
+### 10. Pursuits redesign (designed, not built)
+
+A pursuit stops being a tag you journal against and becomes a **saved question
+about yourself**, answered from the whole journal.
+
+- **Pursuit page:** the question and the person's "why"; what keeps showing up
+  (AI-written patterns with entry counts and dates); a mentions-per-week chart;
+  related entries; an "Ask about this" chat grounded in those entries and an
+  optional "Write" button.
+- **Matching by meaning:** when a pursuit is created the AI writes a few "what
+  this looks like in a journal" phrases, which are embedded and matched against
+  entries. A match table (entry, pursuit, score) is filled when an entry is saved,
+  new pursuits are backfilled, and entries already tagged count as full matches.
+  Insights are cached and refreshed after enough new matches or weekly.
+- **Cold start:** with few matches, show them with a line such as "Only 2 entries
+  touch on this so far" instead of a dead end.
+- **Empty state (decided):** when there are no pursuits, the Pursuits section on
+  Reflect shows a single quiet dashed card, "Add your first pursuit", with a small
+  chevron and no button. The whole card is tappable.
+- **First-time flow (decided):** shown once from that card, then straight to the
+  last step on later visits. 1) A pursuit is a question about you, with example
+  questions. 2) Ask once, keep writing: name the question, write as normal, see
+  what comes up. 3) Pick a starter question or write your own, with an optional
+  "why". This replaces the old Profile pursuits onboarding, which teaches
+  journaling against a pursuit.
+- **Depends on:** the matching above. The flow says Wabii looks across everything
+  written, which is not true of today's pursuits, so ship the matching first.
+- **Still open:** whether Wabii should suggest pursuits it notices; whether "Ask
+  about this" is in the first version; seeding a pursuit from the reason someone
+  gave in onboarding; and item 9 (very big questions such as "Who am I?").
 
 ## Already shipped (context)
 

@@ -1,9 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
-import { View, Text, SectionList, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, SectionList, Pressable, ActivityIndicator, RefreshControl, useWindowDimensions } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { router, useFocusEffect } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { SpinningRing } from '@/components/spinning-ring';
+import { COLORS } from '@/constants/colors';
+import { calculateStreak } from '@/lib/streak';
+import { cacheEntries, currentUserId, getPendingEntries, loadCachedEntries, onEntriesSynced, syncPendingEntries } from '@/lib/offline-entries';
 
 type Entry = {
   id: string;
@@ -16,12 +21,14 @@ type Section = {
   data: Entry[];
 };
 
-function getGreetingEmoji() {
+const CHECK_IN_WORDS = ['Check in', 'Rant', 'Vent', 'Yap', 'Reflect'];
+
+function getTimeOfDayPhrase() {
   const hour = new Date().getHours();
-  if (hour < 12) return '☀️';
-  if (hour < 17) return '🌤️';
-  if (hour < 21) return '🌇';
-  return '🌙';
+  if (hour < 12) return 'this morning';
+  if (hour < 17) return 'this afternoon';
+  if (hour < 21) return 'this evening';
+  return 'tonight';
 }
 
 function getDayLabel(iso: string) {
@@ -101,8 +108,17 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [chatEntryIds, setChatEntryIds] = useState<Set<string>>(new Set());
+  const [unsyncedIds, setUnsyncedIds] = useState<Set<string>>(new Set());
   const [firstName, setFirstName] = useState('');
-  const greetingEmoji = getGreetingEmoji();
+  const [streak, setStreak] = useState(0);
+  const timeOfDay = getTimeOfDayPhrase();
+  const [wordIndex, setWordIndex] = useState(0);
+  const { height: windowHeight } = useWindowDimensions();
+
+  useEffect(() => {
+    const id = setInterval(() => setWordIndex(i => (i + 1) % CHECK_IN_WORDS.length), 2600);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -113,15 +129,41 @@ export default function HomeScreen() {
   }, []);
 
   async function fetchAll() {
-    const [{ data: entryData }, { data: conversationData }] = await Promise.all([
+    // Entries saved offline are still waiting on the phone: try to send
+    // them, and show them here in the meantime.
+    syncPendingEntries();
+
+    const [entryRes, { data: conversationData }] = await Promise.all([
       supabase.from('journal_entries').select('id, content, created_at').order('created_at', { ascending: false }),
       supabase.from('chat_conversations').select('entry_id'),
     ]);
-    const entries = entryData ?? [];
-    setHasEntries(entries.length > 0);
-    setSections(groupByDate(entries));
+
+    // With no connection, fall back to the copy kept on the phone.
+    let entries: Entry[];
+    if (entryRes.error) {
+      entries = await loadCachedEntries();
+    } else {
+      entries = entryRes.data ?? [];
+      cacheEntries(entries);
+    }
+
+    const userId = await currentUserId();
+    const known = new Set(entries.map(e => e.id));
+    const waiting = (await getPendingEntries()).filter(p => p.user_id === userId && !known.has(p.id));
+    const merged = [
+      ...waiting.map(p => ({ id: p.id, content: p.content, created_at: p.created_at })),
+      ...entries,
+    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    setUnsyncedIds(new Set(waiting.map(p => p.id)));
+    setHasEntries(merged.length > 0);
+    setSections(groupByDate(merged));
+    setStreak(calculateStreak(merged.map(e => e.created_at)));
     setChatEntryIds(new Set((conversationData ?? []).map(c => c.entry_id)));
   }
+
+  // When a background upload finishes, refresh so "on this phone" tags clear.
+  useEffect(() => onEntriesSynced(() => { fetchAll(); }), []);
 
   useFocusEffect(
     useCallback(() => {
@@ -138,51 +180,74 @@ export default function HomeScreen() {
     );
   }
 
+  const blobSize = 260;
+  const heroHeight = Math.round(windowHeight * 0.78);
+
+  const hero = (
+    <View style={{ minHeight: heroHeight, alignItems: 'center', justifyContent: 'center', paddingBottom: 24 }}>
+      <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 21, color: '#3f3a36', marginBottom: 12 }}>
+        Hey{firstName ? ` ${firstName}` : ' there'}
+      </Text>
+      <Text style={{
+        fontFamily: 'Inter_700Bold', fontSize: 24, lineHeight: 30, color: '#1c1917',
+        textAlign: 'center', paddingHorizontal: 20,
+      }}>
+        How are you feeling {timeOfDay}?
+      </Text>
+
+      <Pressable
+        onPress={() => router.push('/(tabs)/new-entry')}
+        accessibilityRole="button"
+        accessibilityLabel={`${CHECK_IN_WORDS[wordIndex]}. Start a new entry.`}
+        style={{ width: blobSize, height: blobSize, alignItems: 'center', justifyContent: 'center', marginTop: 64 }}>
+        <View style={{ position: 'absolute' }}>
+          <SpinningRing size={blobSize} />
+        </View>
+        {/* The plus and the cycling word are centred together as one group. */}
+        <View style={{ alignItems: 'center', gap: 6 }}>
+          <Feather name="plus" size={54} color={COLORS.primary} />
+          <View style={{ height: 22, minWidth: 120, alignItems: 'center', justifyContent: 'center' }}>
+            <Animated.Text
+              key={CHECK_IN_WORDS[wordIndex]}
+              entering={FadeIn.duration(400)}
+              exiting={FadeOut.duration(250)}
+              style={{ position: 'absolute', fontFamily: 'Inter_600SemiBold', fontSize: 17, color: '#1c1917' }}>
+              {CHECK_IN_WORDS[wordIndex]}
+            </Animated.Text>
+          </View>
+        </View>
+      </Pressable>
+
+      {hasEntries ? (
+        <Pressable
+          onPress={() => router.push('/streak')}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="View streak details"
+          style={{
+          flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 28,
+          borderWidth: 1.5, borderColor: streak > 0 ? 'rgba(87, 83, 78, 0.3)' : 'rgba(168, 162, 158, 0.35)',
+          borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8,
+        }}>
+          <Ionicons name="flame" size={17} color={streak > 0 ? COLORS.primary : '#a8a29e'} />
+          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13.5, color: streak > 0 ? '#57534e' : '#a8a29e' }}>
+            {streak} day streak
+          </Text>
+        </Pressable>
+      ) : (
+        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', marginTop: 28, textAlign: 'center' }}>
+          Whatever's on your mind — get it out.
+        </Text>
+      )}
+    </View>
+  );
+
   return (
     <WarmBackground>
-      {/* Header */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: 24, paddingTop: 84, paddingBottom: 0,
-      }}>
-        <Text style={{ fontSize: 24, fontFamily: 'Inter_700Bold', color: '#44403c', lineHeight: 30 }}>
-          {greetingEmoji}  Hey{firstName ? ` ${firstName}` : ' there'}
-        </Text>
-        <Pressable
-          onPress={() => router.push('/search-onboarding')}
-          hitSlop={10}
-          style={{
-            width: 40, height: 40, borderRadius: 20, backgroundColor: '#ffffff',
-            alignItems: 'center', justifyContent: 'center',
-            shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
-          }}>
-          <Feather name="search" size={18} color="#78716c" />
-        </Pressable>
-      </View>
-
-      {!hasEntries ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>✍️</Text>
-          <Text style={{ fontSize: 22, fontFamily: 'Inter_600SemiBold', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
-            Nothing here yet
-          </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#a8a29e', textAlign: 'center', lineHeight: 24, marginBottom: 24 }}>
-            Whatever's on your mind — get it out.
-          </Text>
-          <Pressable
-            onPress={() => router.push('/(tabs)/new-entry')}
-            style={{
-              backgroundColor: '#E85D2C', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 24,
-              flexDirection: 'row', alignItems: 'center', gap: 8,
-            }}>
-            <Feather name="edit-3" size={16} color="#ffffff" />
-            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#ffffff' }}>Type, talk, or chat</Text>
-          </Pressable>
-        </View>
-      ) : (
         <SectionList
           sections={sections}
           keyExtractor={item => item.id}
+          ListHeaderComponent={hero}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -194,7 +259,7 @@ export default function HomeScreen() {
               tintColor="#E85D2C"
             />
           }
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 180 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 40, paddingBottom: 180 }}
           stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }) => (
             <View style={{ paddingTop: 20, paddingBottom: 6, paddingHorizontal: 4 }}>
@@ -230,9 +295,17 @@ export default function HomeScreen() {
                   {preview(item.content)}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: textColor, opacity: 0.7 }}>
-                    {time}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: textColor, opacity: 0.7 }}>
+                      {time}
+                    </Text>
+                    {unsyncedIds.has(item.id) && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, opacity: 0.7 }}>
+                        <Feather name="cloud-off" size={11} color={textColor} />
+                        <Text style={{ fontSize: 10.5, fontFamily: 'Inter_500Medium', color: textColor }}>On this phone</Text>
+                      </View>
+                    )}
+                  </View>
                   {hasChat && (
                     <Pressable
                       onPress={() => router.push(`/chat/${item.id}`)}
@@ -253,7 +326,6 @@ export default function HomeScreen() {
             );
           }}
         />
-      )}
     </WarmBackground>
   );
 }

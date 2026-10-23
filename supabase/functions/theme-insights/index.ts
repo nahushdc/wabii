@@ -1,15 +1,30 @@
 import "@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'npm:@supabase/supabase-js';
-import Anthropic from 'npm:@anthropic-ai/sdk';
+import AnthropicClient from 'npm:@anthropic-ai/sdk';
+import { Anthropic } from 'npm:@posthog/ai/anthropic';
+import { PostHog } from 'npm:posthog-node';
+import { getPrompt } from '../_shared/prompts.ts';
+
+const posthogProjectToken = Deno.env.get('POSTHOG_PROJECT_TOKEN');
+const posthogHost = Deno.env.get('POSTHOG_HOST');
+const posthog = posthogProjectToken && posthogHost
+  ? new PostHog(posthogProjectToken, {
+      host: posthogHost,
+      privacyMode: true,
+      flushAt: 1,
+      flushInterval: 0,
+      enableExceptionAutocapture: true,
+    })
+  : undefined;
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-const anthropic = new Anthropic({
-  apiKey: Deno.env.get('ANTHROPIC_API_KEY')!,
-});
+const anthropic = posthog
+  ? new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')!, posthog })
+  : new AnthropicClient({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
 
 // Pattern insight needs multiple logged occurrences to say anything about
 // frequency/timing — Theme insight can work off a single relevant entry.
@@ -82,14 +97,14 @@ Deno.serve(async (req) => {
         messages: [
           {
             role: 'user',
-            content: `You are a thoughtful reflection companion. Someone has a "pursuit" — an ongoing personal question they're exploring — described as "${theme.name}".${focusContext}${motivationContext}
-
-Below are journal entries from across their whole journal that are most semantically related to this pursuit (they weren't necessarily written specifically for it). Write a short (3-4 sentence) description of what this pursuit actually seems to be about for them — what's underneath it, grounded strictly in these entries. This is about content and meaning, not timing or frequency. Don't just restate the pursuit's name back. Second person ("you"). Plain prose, no headers, no bullet points.
-
-Journal entries:
-${entriesText}`,
+            content: await getPrompt(supabase, 'theme_insight_theme', { theme_name: theme.name, focus_context: focusContext, motivation_context: motivationContext, entries: entriesText }),
           },
         ],
+        ...(posthog ? {
+          posthogDistinctId: user.id,
+          posthogTraceId: crypto.randomUUID(),
+          posthogProperties: { $ai_session_id: `theme-${themeId}` },
+        } : {}),
       });
 
       const content = message.content[0].type === 'text' ? message.content[0].text : '';
@@ -139,20 +154,14 @@ ${entriesText}`,
       messages: [
         {
           role: 'user',
-          content: `You are a thoughtful, warm reflection companion. Below are someone's journal entries, all logged over time under a pursuit called "${theme.name}".${focusContext}${motivationContext}
-
-Analyze the STRUCTURE and TIMING of when this comes up — not what it's about in general, but specifically:
-- Frequency: how often it recurs
-- Timing: any pattern in time of day, day of week, or life circumstance
-- Triggers: what seems to set it off, based on what's written right before/around it
-- Sequence: how it tends to escalate, resolve, or repeat across entries
-
-Be honest but kind — this is for the person's own reflection, not an evaluation. Be specific and grounded in the entries, not generic. 3–4 paragraphs. No bullet points. No headers. Just thoughtful prose.
-
-Journal entries:
-${entriesText}`,
+          content: await getPrompt(supabase, 'theme_insight_pattern', { theme_name: theme.name, focus_context: focusContext, motivation_context: motivationContext, entries: entriesText }),
         },
       ],
+      ...(posthog ? {
+        posthogDistinctId: user.id,
+        posthogTraceId: crypto.randomUUID(),
+        posthogProperties: { $ai_session_id: `theme-${themeId}` },
+      } : {}),
     });
 
     const content = message.content[0].type === 'text' ? message.content[0].text : '';
@@ -167,5 +176,7 @@ ${entriesText}`,
     return json({ id: saved.id, content, insight_type: 'pattern' });
   } catch (err) {
     return json({ error: err.message }, 500);
+  } finally {
+    await posthog?.flush();
   }
 });

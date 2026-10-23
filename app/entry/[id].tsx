@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 import { TagPicker, SelectedTag } from '@/components/tag-picker';
 import { WarmBackground } from '@/components/warm-background';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
+import { posthog } from '@/lib/posthog';
+import { getPendingEntries, loadCachedEntries } from '@/lib/offline-entries';
 
 function formatDuration(ms: number) {
   const totalSeconds = Math.floor(ms / 1000);
@@ -73,7 +75,11 @@ export default function EntryDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Set when this is the phone's own copy (not yet uploaded, or offline): read-only.
+  const [localNotice, setLocalNotice] = useState('');
   const dictationBaseRef = useRef('');
+  // While dictating, keep the newest words in view as the text grows.
+  const dictationScrollRef = useRef<ScrollView>(null);
   const { isRecording: isDictating, connecting: dictationConnecting, interimText, error: dictationError, durationMs, start: startDictationEngine, stop: stopDictationEngine } = useLiveTranscription({
     onFinalTranscript: (sessionTranscript) => {
       const base = dictationBaseRef.current;
@@ -92,11 +98,33 @@ export default function EntryDetailScreen() {
 
   useEffect(() => {
     async function fetchEntry() {
-      const [{ data: entryData }, { data: tagData }] = await Promise.all([
+      // An entry saved offline lives only on this phone until it uploads.
+      const waiting = (await getPendingEntries()).find(p => p.id === id);
+      if (waiting) {
+        setEntry({ id: waiting.id, content: waiting.content, created_at: waiting.created_at, updated_at: waiting.created_at });
+        setContent(waiting.content);
+        setTags(waiting.tags.map(t => ({ id: t.name, name: t.name, category: t.category })));
+        setLocalNotice("Saved on this phone. It will upload when you're back online.");
+        setLoading(false);
+        return;
+      }
+
+      const [entryRes, tagRes] = await Promise.all([
         supabase.from('journal_entries').select('*').eq('id', id).single(),
         supabase.from('entry_tags').select('tags(id, name, category)').eq('entry_id', id),
       ]);
+      const { data: entryData } = entryRes;
+      const { data: tagData } = tagRes;
       if (entryData) { setEntry(entryData); setContent(entryData.content); }
+      else if (entryRes.error && entryRes.error.code !== 'PGRST116') {
+        // Couldn't reach the server: show the copy kept on the phone, read-only.
+        const cached = (await loadCachedEntries()).find(c => c.id === id);
+        if (cached) {
+          setEntry({ id: cached.id, content: cached.content, created_at: cached.created_at, updated_at: cached.created_at });
+          setContent(cached.content);
+          setLocalNotice("You're offline. This is the copy saved on your phone.");
+        }
+      }
       if (tagData) {
         const loaded = tagData.map((r: any) => r.tags).filter(Boolean);
         setTags(loaded);
@@ -129,6 +157,11 @@ export default function EntryDetailScreen() {
       if (tagRow) await supabase.from('entry_tags').insert({ entry_id: id, tag_id: tagRow.id });
     }
 
+    posthog?.capture('journal_entry_updated', {
+      word_count: content.trim().split(/\s+/).length,
+      tag_count: editTags.length,
+    });
+
     setEntry(prev => prev ? { ...prev, content: content.trim() } : prev);
     setTags(editTags.map(t => ({ id: t.name, name: t.name, category: t.category })));
     setSaving(false);
@@ -141,7 +174,12 @@ export default function EntryDetailScreen() {
       {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
-          await supabase.from('journal_entries').delete().eq('id', id);
+          const { error: deleteError } = await supabase.from('journal_entries').delete().eq('id', id);
+          if (deleteError) {
+            setError(deleteError.message);
+            return;
+          }
+          posthog?.capture('journal_entry_deleted');
           router.replace('/(tabs)');
         },
       },
@@ -195,7 +233,7 @@ export default function EntryDetailScreen() {
                   : <Feather name="check" size={22} color="#E85D2C" />}
               </Pressable>
             </>
-          ) : (
+          ) : localNotice ? null : (
             <>
               <Pressable onPress={() => router.push(`/chat/${id}`)} style={{ padding: 4 }}>
                 <Feather name="message-circle" size={20} color="#78716c" />
@@ -241,7 +279,11 @@ export default function EntryDetailScreen() {
               as read-only text instead of an editable field — editing it
               mid-dictation would fight with the incoming transcript. */}
           {isDictating ? (
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 8 }}>
+            <ScrollView
+              ref={dictationScrollRef}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 8 }}
+              onContentSizeChange={() => dictationScrollRef.current?.scrollToEnd({ animated: false })}>
               <Text style={{ fontSize: 18, fontFamily: 'Inter_400Regular', color: '#1c1917', lineHeight: 30 }}>
                 {content}
                 {interimText ? <Text style={{ color: '#a8a29e' }}>{content ? ' ' : ''}{interimText}</Text> : null}
@@ -274,8 +316,15 @@ export default function EntryDetailScreen() {
             </Text>
           </View>
 
+          {localNotice ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 24, marginBottom: 14, backgroundColor: '#f0ebe3', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 }}>
+              <Feather name="cloud-off" size={14} color="#78716c" />
+              <Text style={{ flex: 1, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: '#78716c', lineHeight: 17 }}>{localNotice}</Text>
+            </View>
+          ) : null}
+
           {error ? (
-            <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
+            <View style={{ marginHorizontal: 24, marginBottom: 12, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 }}>
               <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
             </View>
           ) : null}

@@ -3,6 +3,8 @@ import { useAudioRecorder as useLiveAudioRecorder } from '@siteed/audio-studio';
 import { AudioModule } from 'expo-audio';
 import { useSharedValue } from 'react-native-reanimated';
 import { supabase } from '@/lib/supabase';
+import { VoiceStreamManager, VoicePath, VoiceSocket } from '@/lib/voice-stream';
+import { playRecordingStoppedAlert } from '@/lib/voice-alert';
 
 // English-only (Nova-3 monolingual) for now — the multilingual/code-switching
 // model is noticeably slower, and English-only is also more accurate when
@@ -41,6 +43,39 @@ function base64ToBytes(base64: string): Uint8Array {
 
 export type TranscriptWord = { word: string; confidence: number };
 
+// Same settings the relay uses. mip_opt_out keeps Deepgram from using anyone's
+// voice to improve its own models.
+function deepgramUrl(language: string) {
+  return `wss://api.deepgram.com/v1/listen?model=nova-3&language=${language}` +
+    `&encoding=linear16&sample_rate=16000&channels=1` +
+    `&punctuate=true&smart_format=true&interim_results=true&endpointing=100&mip_opt_out=true`;
+}
+
+// Opens a live-transcription connection and resolves once it is open.
+// 'direct': straight to Deepgram with a one-time key (no 150-second limit).
+// 'relay': through our server function, kept as the fallback.
+async function openSocket(path: VoicePath, language: string): Promise<VoiceSocket> {
+  let socket: WebSocket;
+  if (path === 'direct') {
+    const { data, error } = await supabase.functions.invoke('deepgram-token');
+    if (error || !data?.access_token) throw new Error('Could not start live transcription.');
+    socket = new WebSocket(deepgramUrl(language), ['bearer', data.access_token]);
+  } else {
+    const { data: { session } } = await supabase.auth.getSession();
+    const wsUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL!.replace(/^http/, 'ws')}/functions/v1/transcribe-voice-live?token=${encodeURIComponent(session?.access_token ?? '')}&language=${language}`;
+    socket = new WebSocket(wsUrl);
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try { socket.close(); } catch {}
+      reject(new Error('Timed out connecting for live transcription.'));
+    }, 8000);
+    socket.onopen = () => { clearTimeout(timer); resolve(); };
+    socket.onerror = () => { clearTimeout(timer); reject(new Error('Could not connect for live transcription.')); };
+  });
+  return socket as unknown as VoiceSocket;
+}
+
 // Loudest 20ms-window RMS in a little-endian PCM16 chunk (16kHz), normalized
 // to [0,1]. Taking the loudest short window instead of the whole-chunk average
 // keeps syllable onsets sharp — averaging a 100ms chunk smears them flat.
@@ -62,7 +97,8 @@ function pcmLevel(bytes: Uint8Array): number {
   return loudest;
 }
 
-// Shared live-transcription engine (WebSocket relay -> Deepgram) used by both
+// Shared live-transcription engine (straight to Deepgram, with the server relay
+// as a fallback, kept alive by VoiceStreamManager) used by both
 // the new-entry voice composer and dictation-into-existing-text (e.g. entry
 // editing). `onFinalTranscript` fires with the FULL accumulated transcript
 // for the current recording session each time a phrase finalizes — callers
@@ -79,9 +115,45 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
   const amplitude = useSharedValue(0);
   const peakRef = useRef(0.2);
   const [finalWords, setFinalWords] = useState<TranscriptWord[]>([]);
-  const socketRef = useRef<WebSocket | null>(null);
+  const managerRef = useRef<VoiceStreamManager | null>(null);
   const finalTranscriptRef = useRef('');
   const finalWordsRef = useRef<TranscriptWord[]>([]);
+
+  function handleMessage(data: string) {
+    try {
+      const msg = JSON.parse(data);
+      const alt = msg?.channel?.alternatives?.[0];
+      const text = alt?.transcript ?? '';
+      if (!text) return;
+
+      if (msg.is_final) {
+        finalTranscriptRef.current = `${finalTranscriptRef.current} ${text}`.trim();
+        onFinalTranscript(finalTranscriptRef.current);
+        const words: TranscriptWord[] = (alt?.words ?? []).map((w: any) => ({
+          word: w.punctuated_word ?? w.word,
+          confidence: typeof w.confidence === 'number' ? w.confidence : 1,
+        }));
+        finalWordsRef.current = [...finalWordsRef.current, ...words];
+        setFinalWords(finalWordsRef.current);
+        setInterimText('');
+      } else {
+        setInterimText(text);
+      }
+    } catch {
+      // non-JSON / control frames — ignore
+    }
+  }
+
+  // Every way of keeping the connection going has failed: stop recording and
+  // make it unmistakable, so nobody keeps talking to a recording that ended.
+  async function giveUp() {
+    managerRef.current = null;
+    try { await stopLiveRecording(); } catch {}
+    setInterimText('');
+    amplitude.value = 0;
+    setError('Dictation stopped. Your text is saved. Tap the mic to continue.');
+    playRecordingStoppedAlert();
+  }
 
   async function start() {
     setError('');
@@ -97,43 +169,16 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
 
       setConnecting(true);
 
-      const { data: { session } } = await supabase.auth.getSession();
       const language = getSpeechLanguage();
-      const wsUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL!.replace(/^http/, 'ws')}/functions/v1/transcribe-voice-live?token=${encodeURIComponent(session?.access_token ?? '')}&language=${language}`;
-      const socket = new WebSocket(wsUrl);
-      socketRef.current = socket;
-
-      socket.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          const alt = msg?.channel?.alternatives?.[0];
-          const text = alt?.transcript ?? '';
-          if (!text) return;
-
-          if (msg.is_final) {
-            finalTranscriptRef.current = `${finalTranscriptRef.current} ${text}`.trim();
-            onFinalTranscript(finalTranscriptRef.current);
-            const words: TranscriptWord[] = (alt?.words ?? []).map((w: any) => ({
-              word: w.punctuated_word ?? w.word,
-              confidence: typeof w.confidence === 'number' ? w.confidence : 1,
-            }));
-            finalWordsRef.current = [...finalWordsRef.current, ...words];
-            setFinalWords(finalWordsRef.current);
-            setInterimText('');
-          } else {
-            setInterimText(text);
-          }
-        } catch {
-          // non-JSON / control frames — ignore
-        }
-      };
-      socket.onerror = () => setError('Live transcription connection had trouble — your recording is still being saved.');
-
-      await new Promise<void>((resolve, reject) => {
-        socket.onopen = () => resolve();
-        socket.onerror = () => reject(new Error('Could not connect for live transcription.'));
-        setTimeout(() => reject(new Error('Timed out connecting for live transcription.')), 8000);
+      const manager = new VoiceStreamManager({
+        connect: (path) => openSocket(path, language),
+        onMessage: handleMessage,
+        // A new connection starts clean: any half-finished phrase is gone.
+        onSwitch: () => setInterimText(''),
+        onGaveUp: () => { void giveUp(); },
       });
+      managerRef.current = manager;
+      await manager.start();
       setConnecting(false);
 
       await startLiveRecording({
@@ -149,7 +194,7 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
         onAudioStream: async (event) => {
           if (typeof event.data !== 'string') return;
           const bytes = base64ToBytes(event.data);
-          if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(bytes);
+          managerRef.current?.send(bytes);
 
           const level = pcmLevel(bytes);
           // Noise gate: room hiss shouldn't move the waveform.
@@ -165,6 +210,8 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
         },
       });
     } catch (e: any) {
+      managerRef.current?.abort();
+      managerRef.current = null;
       setConnecting(false);
       setError(e?.message ?? 'Could not start recording.');
     }
@@ -173,11 +220,11 @@ export function useLiveTranscription({ onFinalTranscript }: { onFinalTranscript:
   async function stop() {
     try {
       const result = await stopLiveRecording();
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ type: 'CloseStream' }));
-        socketRef.current.close();
-      }
-      socketRef.current = null;
+      // Lets the last phrase, still unfinalized when you tap stop, come through
+      // before the connection closes.
+      const manager = managerRef.current;
+      managerRef.current = null;
+      await manager?.stop();
       setInterimText('');
       amplitude.value = 0;
       return result;

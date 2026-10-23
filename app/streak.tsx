@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
+import { ProactiveRemindersCard } from '@/components/proactive-reminders-card';
 
 const CELL = 22;
 const GAP = 5;
@@ -214,6 +215,10 @@ export default function StreakScreen() {
                 <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: '#a8a29e' }}>Current streak</Text>
               </View>
             </View>
+          </View>
+
+          <View style={{ marginTop: 20 }}>
+            <ProactiveRemindersCard />
           </View>
         </ScrollView>
       )}

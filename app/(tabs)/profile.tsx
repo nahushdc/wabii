@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
-import { WarmBackground } from '@/components/warm-background';
+import { calculateStreak } from '@/lib/streak';
+import { WarmBackground, WARM_BG_COLOR } from '@/components/warm-background';
+import { LinearGradient } from 'expo-linear-gradient';
+import { clearLocalJournalData, currentUserId, getPendingEntries, syncPendingEntries } from '@/lib/offline-entries';
 
 function getInitials(nameOrEmail: string) {
   const parts = nameOrEmail.split(/[\s@]+/);
@@ -11,31 +15,6 @@ function getInitials(nameOrEmail: string) {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
   return nameOrEmail[0].toUpperCase();
-}
-
-function calculateStreak(dates: string[]): number {
-  if (dates.length === 0) return 0;
-
-  // Get unique date strings (YYYY-MM-DD) in local time
-  const unique = Array.from(new Set(
-    dates.map(d => new Date(d).toLocaleDateString('en-CA')) // en-CA gives YYYY-MM-DD
-  )).sort((a, b) => b.localeCompare(a)); // descending
-
-  const today = new Date().toLocaleDateString('en-CA');
-  const yesterday = new Date(Date.now() - 864e5).toLocaleDateString('en-CA');
-
-  // Streak must start from today or yesterday
-  if (unique[0] !== today && unique[0] !== yesterday) return 0;
-
-  let streak = 1;
-  for (let i = 1; i < unique.length; i++) {
-    const prev = new Date(unique[i - 1]);
-    const curr = new Date(unique[i]);
-    const diffDays = Math.round((prev.getTime() - curr.getTime()) / 864e5);
-    if (diffDays === 1) streak++;
-    else break;
-  }
-  return streak;
 }
 
 function StatBox({ value, label, emoji }: { value: string | number; label: string; emoji: string }) {
@@ -76,25 +55,24 @@ function StreakRow({ streak }: { streak: number }) {
   );
 }
 
+// A flat, airy settings row — no card, no divider, no chevron.
 function MenuItem({ label, subtitle, icon, onPress, danger }: { label: string; subtitle?: string; icon: string; onPress: () => void; danger?: boolean }) {
   return (
     <Pressable
       onPress={onPress}
       style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        backgroundColor: '#ffffff', borderRadius: 16, padding: 16, marginBottom: 10,
-        shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+        paddingVertical: 19,
       }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 12 }}>
-        <Feather name={icon as any} size={18} color={danger ? '#ef4444' : '#78716c'} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flex: 1, marginRight: 12 }}>
+        <Feather name={icon as any} size={20} color={danger ? '#ef4444' : '#8a8279'} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 15, color: danger ? '#ef4444' : '#1c1917' }}>{label}</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 16, color: danger ? '#ef4444' : '#1c1917' }}>{label}</Text>
           {subtitle ? (
             <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11.5, color: '#a8a29e', marginTop: 1 }}>{subtitle}</Text>
           ) : null}
         </View>
       </View>
-      <Feather name="chevron-right" size={16} color="#d4cdc8" />
     </Pressable>
   );
 }
@@ -106,6 +84,8 @@ export default function ProfileScreen() {
   const [streak, setStreak] = useState(0);
   const [totalEntries, setTotalEntries] = useState(0);
   const [totalWords, setTotalWords] = useState(0);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     async function fetchData() {
@@ -136,6 +116,44 @@ export default function ProfileScreen() {
     await supabase.auth.signOut();
   }
 
+  async function confirmDeleteAccount() {
+    // Entries written offline that haven't uploaded yet exist only on this
+    // phone: try to send them first, and warn if any are still waiting.
+    await syncPendingEntries();
+    const userId = await currentUserId();
+    const waiting = (await getPendingEntries()).filter(p => p.user_id === userId).length;
+
+    const warning = waiting > 0
+      ? `\n\n${waiting} ${waiting === 1 ? 'entry exists' : 'entries exist'} only on this phone and ${waiting === 1 ? "hasn't" : "haven't"} uploaded yet. Deleting now loses ${waiting === 1 ? 'it' : 'them'} too, and an export won\u2019t include ${waiting === 1 ? 'it' : 'them'}. Connect to the internet to upload ${waiting === 1 ? 'it' : 'them'} first.`
+      : '';
+
+    Alert.alert(
+      'Delete everything you\u2019ve understood about yourself?',
+      'Your entries, the patterns we\u2019ve found and every reflection will be erased for good. It can\u2019t be undone.\n\nSave a copy of your journal first, so you keep what you\u2019ve written.' + warning,
+      [
+        { text: 'Keep my journal', style: 'cancel' },
+        { text: 'Export my journal', onPress: () => router.push('/export') },
+        { text: 'Delete account', style: 'destructive', onPress: deleteAccount },
+      ]
+    );
+  }
+
+  async function deleteAccount() {
+    setDeleteError('');
+    setDeleting(true);
+    const { error } = await supabase.functions.invoke('delete-account', { body: { confirm: true } });
+    if (error) {
+      setDeleting(false);
+      setDeleteError('Could not delete your account. Please try again.');
+      return;
+    }
+    // The account is gone server-side: stop any reminders still scheduled on
+    // this phone, then drop the local session (the auth guard returns to log-in).
+    await Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
+    await clearLocalJournalData();
+    await supabase.auth.signOut({ scope: 'local' });
+  }
+
   async function handlePursuitsPress() {
     const { data: { user } } = await supabase.auth.getUser();
     const { data } = user
@@ -156,7 +174,7 @@ export default function ProfileScreen() {
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 140 }}>
       {/* Header */}
       <View style={{ paddingHorizontal: 24, paddingTop: 64, paddingBottom: 16 }}>
-        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 22, color: '#1c1917' }}>Profile</Text>
+        <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 18, color: '#1c1917' }}>Profile</Text>
       </View>
 
       {loading ? (
@@ -201,7 +219,7 @@ export default function ProfileScreen() {
 
           {/* Menu */}
           <View style={{ paddingHorizontal: 24, marginBottom: 24 }}>
-            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 12 }}>
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.6, textTransform: 'uppercase', color: '#c4b9b0', marginBottom: 6 }}>
               Settings
             </Text>
             <MenuItem label="Reminders" icon="bell" onPress={() => router.push('/notifications')} />
@@ -210,6 +228,7 @@ export default function ProfileScreen() {
             <MenuItem label="Pursuits" icon="edit-3" onPress={handlePursuitsPress} />
             <MenuItem label="Share with coach" icon="share-2" onPress={() => router.push('/therapist-invite')} />
             <MenuItem label="Export & Import" icon="download" onPress={() => router.push('/export')} />
+            <MenuItem label="How we keep it private" icon="shield" onPress={() => router.push('/privacy-intro?from=profile')} />
             <MenuItem label="Help" icon="help-circle" onPress={() => router.push('/help')} />
           </View>
 
@@ -220,10 +239,29 @@ export default function ProfileScreen() {
               style={{ backgroundColor: '#fff1f0', borderRadius: 16, paddingVertical: 16, alignItems: 'center' }}>
               <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#ef4444' }}>Sign out</Text>
             </Pressable>
+
+            <Pressable
+              onPress={confirmDeleteAccount}
+              disabled={deleting}
+              style={{ paddingVertical: 18, alignItems: 'center', marginTop: 4 }}>
+              {deleting
+                ? <ActivityIndicator color="#a8a29e" />
+                : <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#a8a29e' }}>Delete account</Text>}
+            </Pressable>
+            {deleteError ? (
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444', textAlign: 'center' }}>{deleteError}</Text>
+            ) : null}
           </View>
         </>
       )}
     </ScrollView>
+    {/* Soft fade so rows slide out under the floating nav bar instead of colliding with it */}
+    <LinearGradient
+      pointerEvents="none"
+      colors={['rgba(245, 239, 228, 0)', WARM_BG_COLOR]}
+      locations={[0, 0.7]}
+      style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 120 }}
+    />
     </WarmBackground>
   );
 }

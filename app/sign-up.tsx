@@ -4,8 +4,10 @@ import { Link, router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
 import { signInWithGoogle } from '@/lib/auth';
+import { AppleSignInButton } from '@/components/apple-sign-in-button';
 import { PasswordInput } from '@/components/password-input';
 import { WarmBackground } from '@/components/warm-background';
+import { posthog } from '@/lib/posthog';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -24,7 +26,10 @@ export default function SignUpScreen() {
     const { error: err } = await supabase.auth.signUp({ email, password });
     setLoading(false);
     if (err) setError(err.message);
-    else router.replace('/(tabs)');
+    else {
+      posthog?.capture('account_signed_up', { signup_method: 'email_password' });
+      router.replace('/(tabs)');
+    }
   }
 
   async function handleGoogle() {
@@ -91,6 +96,9 @@ export default function SignUpScreen() {
             ? <ActivityIndicator color="white" />
             : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Create account</Text>}
         </Pressable>
+
+        {/* Apple */}
+        <AppleSignInButton onError={setError} />
 
         {/* Google */}
         <Pressable

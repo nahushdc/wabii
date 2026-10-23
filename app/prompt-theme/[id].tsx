@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { COLORS } from '@/constants/colors';
+import { posthog } from '@/lib/posthog';
 
 type PromptRow = { key: string; text: string };
 
@@ -141,6 +142,12 @@ export default function PromptThemeScreen() {
     await supabase.from('theme_prompts').insert(
       validPrompts.map((text, i) => ({ theme_id: themeId, prompt_text: text, sort_order: i }))
     );
+
+    posthog?.capture('pursuit_saved', {
+      action: isNew ? 'created' : 'updated',
+      prompt_count: validPrompts.length,
+      duration_days: durationDays,
+    });
 
     setSaving(false);
     router.back();

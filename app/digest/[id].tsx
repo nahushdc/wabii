@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { WarmBackground } from '@/components/warm-background';
 import { DigestInsightsPanel, type DigestInsights } from '@/components/digest-insights';
 import { BoldText } from '@/components/bold-text';
+import { posthog } from '@/lib/posthog';
 
 type Digest = {
   id: string;
@@ -63,11 +64,14 @@ export default function DigestScreen() {
     const newRating = rating === value ? null : value;
     setRating(newRating);
     setRatingLoading(true);
-    await supabase
+    const { error } = await supabase
       .from('weekly_digests')
       .update({ rating: newRating })
       .eq('id', id);
     setRatingLoading(false);
+    if (!error && newRating) {
+      posthog?.capture('digest_rated', { digest_type: 'weekly', rating: newRating });
+    }
 
     if (newRating === 'down') {
       setShowFeedbackBox(true);

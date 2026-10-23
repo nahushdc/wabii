@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Keyboard, LayoutAnimation, UIManager } from 'react-native';
+import { View, Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Keyboard, LayoutAnimation, UIManager, BackHandler } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -14,6 +14,21 @@ import { COLORS } from '@/constants/colors';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { cancelTodaysReminderOccurrencesIfJournaled } from '@/lib/reminder-notifications';
 import { VoiceMicControl } from '@/components/voice-pulse';
+import { DictationNotice } from '@/components/dictation-notice';
+import { posthog } from '@/lib/posthog';
+import { consumeReminderAttribution } from '@/lib/reminder-attribution';
+import { posthogLogs } from '@/lib/posthog-logs';
+import { clearDraft, currentUserId, loadDraft, newEntryId, queueEntry, saveDraft, syncPendingEntries } from '@/lib/offline-entries';
+
+// "today, 3:20 pm" / "yesterday, 9:14 pm" / "Mon, 9:14 pm"
+function draftLabel(iso: string) {
+  const when = new Date(iso);
+  const time = when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOfDay(new Date()) - startOfDay(when)) / 86400000);
+  const day = days <= 0 ? 'today' : days === 1 ? 'yesterday' : when.toLocaleDateString('en-US', { weekday: 'short' });
+  return `${day}, ${time}`;
+}
 
 function getTodayLabel() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -23,6 +38,7 @@ type Dictation = {
   isRecording: boolean;
   connecting: boolean;
   interimText: string;
+  error: string;
   amplitude: SharedValue<number>;
   start: () => void;
   stop: () => void;
@@ -43,6 +59,8 @@ function TextComposer({
   dictation: Dictation;
 }) {
   const bottomInset = useBottomInset();
+  // While dictating, keep the newest words in view as the text grows.
+  const dictationScrollRef = useRef<ScrollView>(null);
   const wordCount = content.trim() === '' ? 0 : content.trim().split(/\s+/).length;
 
   return (
@@ -102,7 +120,11 @@ function TextComposer({
           read-only text instead of an editable field — editing it mid-dictation
           would fight with the incoming transcript. */}
       {dictation.isRecording ? (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}>
+        <ScrollView
+          ref={dictationScrollRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}
+          onContentSizeChange={() => dictationScrollRef.current?.scrollToEnd({ animated: false })}>
           <Text style={{ fontSize: 18, fontFamily: 'Inter_400Regular', color: '#1c1917', lineHeight: 30 }}>
             {content}
             {dictation.interimText ? <Text style={{ color: '#a8a29e' }}>{content && !/\s$/.test(content) ? ' ' : ''}{dictation.interimText}</Text> : null}
@@ -132,11 +154,15 @@ function TextComposer({
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: 24, paddingTop: 8, marginBottom: bottomInset,
       }}>
-        {!dictation.isRecording && (
+        {dictation.error ? (
+          <View style={{ flex: 1, flexDirection: 'row', marginRight: 12 }}>
+            <DictationNotice message={dictation.error} />
+          </View>
+        ) : !dictation.isRecording ? (
           <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#c4b9b0' }}>
             {`${wordCount} ${wordCount === 1 ? 'word' : 'words'}`}
           </Text>
-        )}
+        ) : null}
         <VoiceMicControl
           isRecording={dictation.isRecording}
           connecting={dictation.connecting}
@@ -231,15 +257,42 @@ export default function NewEntryScreen() {
   // mounted across visits instead of unmounting them — so without this, the
   // previous entry's text/tags/transcript would still be sitting here the
   // next time this tab is opened. Reset on every focus instead.
+  // Whatever was being written is kept on the phone, so closing the app or
+  // leaving this screen never loses it; saving clears it.
+  const skipDraftRef = useRef(false);
+  // The draft as it was loaded, so reopening the screen doesn't count as an
+  // edit and keep pushing back the day it expires.
+  const loadedDraftRef = useRef('');
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [clearedDraft, setClearedDraft] = useState<{ content: string; savedAt: string } | null>(null);
   useFocusEffect(
     useCallback(() => {
+      skipDraftRef.current = false;
+      loadedDraftRef.current = '';
+      setDraftSavedAt(null);
+      setClearedDraft(null);
       setError('');
       setContent(seed ? `${seed}\n\n` : '');
       setTags([]);
       setActiveThemeId(deepLinkThemeId ?? null);
       setPromptIndex(0);
+      if (!seed) {
+        loadDraft().then(draft => {
+          if (!draft || skipDraftRef.current) return;
+          loadedDraftRef.current = draft.content;
+          setContent(draft.content);
+          setDraftSavedAt(draft.savedAt);
+        });
+      }
     }, [seed, deepLinkThemeId])
   );
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (!skipDraftRef.current && content !== loadedDraftRef.current) saveDraft(content);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [content]);
 
   useEffect(() => {
     supabase
@@ -272,42 +325,94 @@ export default function NewEntryScreen() {
     useCallback(() => () => { if (liveRef.current.isRecording) liveRef.current.stop(); }, [])
   );
 
+  // The latest text, readable after awaits (dictation lands a moment after stop).
+  const contentRef = useRef(content);
+  contentRef.current = content;
+
+  // Leaving with something written just saves it as an entry; it can be
+  // deleted from the entry afterwards. Leaving an empty page just leaves.
+  const leaveRef = useRef<() => void>(() => {});
+  leaveRef.current = async function leave() {
+    if (loading) return;
+    if (live.isRecording) {
+      await live.stop();
+      await new Promise(r => setTimeout(r, 60));
+    }
+    if (contentRef.current.trim()) await handleSave();
+    else router.replace('/(tabs)');
+  };
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => { leaveRef.current(); return true; });
+      return () => sub.remove();
+    }, [])
+  );
+
+  function startFresh() {
+    setClearedDraft({ content, savedAt: draftSavedAt ?? new Date().toISOString() });
+    skipDraftRef.current = false;
+    loadedDraftRef.current = '';
+    setContent('');
+    setDraftSavedAt(null);
+    clearDraft();
+  }
+
+  function undoStartFresh() {
+    if (!clearedDraft) return;
+    loadedDraftRef.current = '';
+    setContent(clearedDraft.content);
+    setDraftSavedAt(clearedDraft.savedAt);
+    setClearedDraft(null);
+  }
+
   async function handleSave() {
     setError('');
-    const finalContent = content.trim();
+    const finalContent = contentRef.current.trim();
     if (!finalContent) { setError('Add something before saving.'); return; }
     setLoading(true);
 
-    const { data: { user } } = await supabase.auth.getUser();
+    // The entry is written to the phone first, so it saves instantly and
+    // survives having no signal; it uploads in the background.
+    const userId = await currentUserId();
+    if (!userId) { setError('Please sign in again to save.'); setLoading(false); return; }
 
-    const { data: entry, error: entryErr } = await supabase
-      .from('journal_entries')
-      .insert({ user_id: user!.id, content: finalContent, prompt_theme_id: activeThemeId })
-      .select('id')
-      .single();
-
-    if (entryErr || !entry) { setError(entryErr?.message ?? 'Failed to save.'); setLoading(false); return; }
-
-    if (tags.length > 0) {
-      for (const tag of tags) {
-        const { data: tagRow, error: tagErr } = await supabase
-          .from('tags')
-          .upsert({ user_id: user!.id, name: tag.name, category: tag.category }, { onConflict: 'user_id,name' })
-          .select('id')
-          .single();
-        if (tagErr || !tagRow) continue;
-        await supabase.from('entry_tags').insert({ entry_id: entry.id, tag_id: tagRow.id });
-      }
+    skipDraftRef.current = true;
+    try {
+      await queueEntry({
+        id: newEntryId(),
+        user_id: userId,
+        content: finalContent,
+        created_at: new Date().toISOString(),
+        prompt_theme_id: activeThemeId,
+        tags: tags.map(t => ({ name: t.name, category: t.category })),
+      });
+    } catch {
+      skipDraftRef.current = false;
+      setError("Couldn't save to this phone. Check that it has free storage and try again.");
+      setLoading(false);
+      return;
     }
-
-    supabase.functions.invoke('embed-entry', {
-      body: { entry_id: entry.id, content: finalContent },
-    });
+    await clearDraft();
+    syncPendingEntries();
 
     // Only after the entry is actually saved — cancel today's reminder(s)
     // for skip_if_journaled, not before, so a save that fails partway
     // through still leaves the reminder in place.
     cancelTodaysReminderOccurrencesIfJournaled();
+
+    const wordCount = finalContent.split(/\s+/).length;
+    const usedPrompt = Boolean(activeThemeId);
+    posthog?.capture('journal_entry_created', {
+      word_count: wordCount,
+      tag_count: tags.length,
+      used_prompt: usedPrompt,
+      from_reminder: consumeReminderAttribution(),
+    });
+    posthogLogs.info('Journal entry saved', {
+      word_count: wordCount,
+      tag_count: tags.length,
+      used_prompt: usedPrompt,
+    });
 
     setLoading(false);
     router.replace('/(tabs)');
@@ -326,7 +431,7 @@ export default function NewEntryScreen() {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: 24, paddingTop: 64, paddingBottom: 12,
       }}>
-        <Pressable onPress={() => router.replace('/(tabs)')} style={{ padding: 4 }}>
+        <Pressable onPress={() => leaveRef.current()} style={{ padding: 4 }}>
           <Feather name="arrow-left" size={22} color="#78716c" />
         </Pressable>
         <Pressable
@@ -348,9 +453,36 @@ export default function NewEntryScreen() {
         </Text>
       </View>
 
-      {(error || live.error) ? (
+      {draftSavedAt && content.trim() ? (
+        <View style={{
+          marginHorizontal: 24, marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8,
+          backgroundColor: '#ffffff', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8,
+          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 5, elevation: 2,
+        }}>
+          <Feather name="edit-2" size={14} color={COLORS.primary} />
+          <Text style={{ flex: 1, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: '#57534e' }}>
+            Draft from {draftLabel(draftSavedAt)}
+          </Text>
+          <Pressable onPress={startFresh} hitSlop={8}>
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: COLORS.primary }}>Start fresh</Text>
+          </Pressable>
+        </View>
+      ) : clearedDraft && !content.trim() ? (
+        <View style={{
+          marginHorizontal: 24, marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8,
+          backgroundColor: '#ffffff', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8,
+          shadowColor: '#1c1917', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 5, elevation: 2,
+        }}>
+          <Text style={{ flex: 1, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: '#57534e' }}>Draft cleared</Text>
+          <Pressable onPress={undoStartFresh} hitSlop={8}>
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: COLORS.primary }}>Undo</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {error ? (
         <View style={{ marginHorizontal: 24, marginTop: 8, backgroundColor: '#fff1f0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error || live.error}</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#ef4444' }}>{error}</Text>
         </View>
       ) : null}
 
@@ -360,7 +492,7 @@ export default function NewEntryScreen() {
         activeThemeId={activeThemeId} setActiveThemeId={setActiveThemeId}
         nightThemeId={nightThemeId} prompts={prompts} promptIndex={promptIndex} setPromptIndex={setPromptIndex}
         dictation={{
-          isRecording: live.isRecording, connecting: live.connecting, interimText: live.interimText,
+          isRecording: live.isRecording, connecting: live.connecting, interimText: live.interimText, error: live.error,
           amplitude: live.amplitude, start: startDictation, stop: stopDictation, cancel: cancelDictation,
         }}
       />

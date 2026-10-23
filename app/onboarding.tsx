@@ -14,6 +14,7 @@ import { registerForPushNotifications } from '@/lib/notifications';
 import { COLORS } from '@/constants/colors';
 import { useLiveTranscription } from '@/hooks/use-live-transcription';
 import { useSetOnboardingComplete } from './_layout';
+import { posthog } from '@/lib/posthog';
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
@@ -26,6 +27,14 @@ const REASON_STARTERS = [
   "I'm going through something and need to process it",
   'I just want a place to vent',
   'My therapist recommended journaling',
+];
+
+type TimeAnswer = 'easy' | 'sometimes' | 'hard';
+
+const TIME_OPTIONS: { value: TimeAnswer; label: string }[] = [
+  { value: 'easy', label: 'Pretty easy, I make time' },
+  { value: 'sometimes', label: 'Sometimes, when I remember' },
+  { value: 'hard', label: 'Hard, life takes over' },
 ];
 
 const VALUE_PROPS = [
@@ -80,6 +89,14 @@ export default function OnboardingScreen() {
   const isValueStep = !step;
   const isNameStep = step === 'name';
   const isReasonsStep = step === 'reasons';
+  const isTimeStep = step === 'time';
+  const isInsightStep = step === 'insight';
+  const [timeAnswer, setTimeAnswer] = useState<TimeAnswer | null>(null);
+
+  // Funnel: one event per step shown, so drop-off is visible step by step.
+  useEffect(() => {
+    posthog?.capture('onboarding_step_viewed', { step: step ?? 'intro' });
+  }, [step]);
   const [loading, setLoading] = useState(false);
   const [finishingAction, setFinishingAction] = useState<'enable' | 'skip' | null>(null);
   const [name, setName] = useState('');
@@ -133,7 +150,7 @@ export default function OnboardingScreen() {
       }
       setReasonsSaving(false);
     }
-    router.replace('/onboarding?step=welcome');
+    router.replace('/onboarding?step=time');
   }
 
   function toggleReminder(index: number) {
@@ -190,6 +207,10 @@ export default function OnboardingScreen() {
     } finally {
       setLoading(false);
       setFinishingAction(null);
+      posthog?.capture('onboarding_completed', {
+        reminders_enabled: withReminders,
+        reminder_count: withReminders ? selectedReminders.size : 0,
+      });
       setOnboardingComplete(true);
       router.replace('/(tabs)');
     }
@@ -381,11 +402,115 @@ export default function OnboardingScreen() {
               ? <ActivityIndicator color="white" />
               : <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Continue</Text>}
           </Pressable>
-          <Pressable onPress={() => router.replace('/onboarding?step=welcome')} disabled={reasonsSaving} style={{ alignSelf: 'center' }}>
+          <Pressable onPress={() => router.replace('/onboarding?step=time')} disabled={reasonsSaving} style={{ alignSelf: 'center' }}>
             <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#a8a29e' }}>Skip for now</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+      </WarmBackground>
+    );
+  }
+
+  if (isTimeStep) {
+    return (
+      <WarmBackground>
+        <View style={{ flex: 1, paddingHorizontal: 28, paddingTop: 64, paddingBottom: 40 }}>
+          <Pressable onPress={() => router.replace('/onboarding?step=reasons')} hitSlop={10} style={{ alignSelf: 'flex-start', padding: 4 }}>
+            <Feather name="arrow-left" size={22} color="#374151" />
+          </Pressable>
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', lineHeight: 31, marginBottom: 8 }}>
+              How easy is it to make time for yourself?
+            </Text>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#78716c', lineHeight: 21, marginBottom: 24 }}>
+              Be honest. There's no wrong answer.
+            </Text>
+            {TIME_OPTIONS.map(opt => {
+              const selected = timeAnswer === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => setTimeAnswer(opt.value)}
+                  style={{
+                    backgroundColor: selected ? '#FDE6DB' : '#ffffff',
+                    borderWidth: 1.5, borderColor: selected ? COLORS.primary : 'transparent',
+                    borderRadius: 16, paddingVertical: 17, paddingHorizontal: 18, marginBottom: 10,
+                  }}>
+                  <Text style={{ fontFamily: selected ? 'Inter_600SemiBold' : 'Inter_500Medium', fontSize: 15, color: '#1c1917' }}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Pressable
+            onPress={() => router.replace('/onboarding?step=insight')}
+            disabled={!timeAnswer}
+            style={{
+              backgroundColor: timeAnswer ? COLORS.primary : '#e7e5e4',
+              borderRadius: 16, paddingVertical: 16, alignItems: 'center', width: '100%',
+            }}>
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>Continue</Text>
+          </Pressable>
+        </View>
+      </WarmBackground>
+    );
+  }
+
+  if (isInsightStep) {
+    const needsNudge = timeAnswer !== 'easy';
+    return (
+      <WarmBackground>
+        <View style={{ flex: 1, paddingHorizontal: 28, paddingTop: 64, paddingBottom: 40 }}>
+          <Pressable onPress={() => router.replace('/onboarding?step=time')} hitSlop={10} style={{ alignSelf: 'flex-start', padding: 4 }}>
+            <Feather name="arrow-left" size={22} color="#374151" />
+          </Pressable>
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            {needsNudge ? (
+              <>
+                <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#78716c', marginBottom: 8 }}>
+                  Why it's worth showing up
+                </Text>
+                <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 72, color: COLORS.primary, lineHeight: 78 }}>56%</Text>
+                <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 24, color: '#1c1917', lineHeight: 31, marginTop: 10, marginBottom: 16 }}>
+                  said their mental health improved after a month of journaling
+                </Text>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#78716c', lineHeight: 23 }}>
+                  In a trial of adults with anxiety symptoms, compared with 31% who didn't journal. They wrote for 15 minutes, three times a week. A regular time makes that easier to keep up.
+                </Text>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: '#a8a29e', lineHeight: 17, marginTop: 14 }}>
+                  A small study of adults. Smyth et al., JMIR Mental Health, 2018.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 28, color: '#1c1917', lineHeight: 36, marginBottom: 16 }}>
+                  You've got a rhythm
+                </Text>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 15, color: '#78716c', lineHeight: 23 }}>
+                  A light nudge on busy days keeps it going. Add one if you like. It's easy to change later.
+                </Text>
+              </>
+            )}
+          </View>
+          <Pressable
+            onPress={() => router.replace('/onboarding?step=welcome')}
+            style={{ backgroundColor: COLORS.primary, borderRadius: 16, paddingVertical: 16, alignItems: 'center', width: '100%' }}>
+            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 16, color: '#ffffff' }}>
+              {needsNudge ? 'Set my reminders' : 'Add a nudge'}
+            </Text>
+          </Pressable>
+          {!needsNudge && (
+            <Pressable
+              onPress={() => finish(false, false, 'skip')}
+              disabled={loading}
+              style={{ alignSelf: 'center', paddingTop: 16 }}>
+              {finishingAction === 'skip'
+                ? <ActivityIndicator size="small" color="#a8a29e" />
+                : <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#a8a29e' }}>Skip</Text>}
+            </Pressable>
+          )}
+        </View>
       </WarmBackground>
     );
   }

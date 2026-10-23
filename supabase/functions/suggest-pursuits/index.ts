@@ -1,15 +1,30 @@
 import "@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'npm:@supabase/supabase-js';
-import Anthropic from 'npm:@anthropic-ai/sdk';
+import AnthropicClient from 'npm:@anthropic-ai/sdk';
+import { Anthropic } from 'npm:@posthog/ai/anthropic';
+import { PostHog } from 'npm:posthog-node';
+import { getPrompt } from '../_shared/prompts.ts';
+
+const posthogProjectToken = Deno.env.get('POSTHOG_PROJECT_TOKEN');
+const posthogHost = Deno.env.get('POSTHOG_HOST');
+const posthog = posthogProjectToken && posthogHost
+  ? new PostHog(posthogProjectToken, {
+      host: posthogHost,
+      privacyMode: true,
+      flushAt: 1,
+      flushInterval: 0,
+      enableExceptionAutocapture: true,
+    })
+  : undefined;
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-const anthropic = new Anthropic({
-  apiKey: Deno.env.get('ANTHROPIC_API_KEY')!,
-});
+const anthropic = posthog
+  ? new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')!, posthog })
+  : new AnthropicClient({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
 
 // Fewer entries than this and there isn't enough signal to spot a real,
 // recurring thread worth naming as a pursuit.
@@ -84,21 +99,14 @@ Deno.serve(async (req) => {
       messages: [
         {
           role: 'user',
-          content: `You are a thoughtful, perceptive reflection companion. Below are someone's recent journal entries.
-
-Notice recurring tensions, questions, or topics they haven't explicitly named but that seem to genuinely matter to them — the kind of thing worth turning into a "pursuit": an ongoing personal question worth deliberately exploring, in the style of "self-sabotage," "why I avoid hard conversations," or "what actually makes me happy."
-
-Suggest 3-5 candidate pursuits grounded specifically in what's actually written — don't invent generic self-help topics that aren't supported by the entries. Don't suggest anything close to these existing pursuits: ${existingNames}.
-
-Respond in exactly this format, one suggestion per block, separated by a blank line, nothing else:
-NAME: <a short phrase, 3-8 words>
-FOCUS: <one sentence, second person ("you"), describing what to explore>
-WHY: <one sentence, second person ("you"), grounded in specific moments from the entries, saying why this seems worth paying attention to right now>
-
-Journal entries:
-${entriesText}`,
+          content: await getPrompt(supabase, 'suggest_pursuits', { existing_names: existingNames, entries: entriesText }),
         },
       ],
+      ...(posthog ? {
+        posthogDistinctId: user.id,
+        posthogTraceId: crypto.randomUUID(),
+        posthogProperties: { $ai_session_id: `suggest-pursuits-${user.id}` },
+      } : {}),
     });
 
     const text = message.content[0].type === 'text' ? message.content[0].text : '';
@@ -107,5 +115,7 @@ ${entriesText}`,
     return json({ suggestions });
   } catch (err) {
     return json({ error: err.message }, 500);
+  } finally {
+    await posthog?.flush();
   }
 });
